@@ -60,7 +60,7 @@ def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo, i: int, j: int, T
 
     leg = list(dict.fromkeys(leg))
     print(f"  leg: {leg}")
-    Buscar_Pares(G, leg, grafo, 0, 0, iteracao + 1)
+    Buscar_Pares(E, leg, grafo, 0, 0, iteracao + 1)
 
 
 def Buscar_Pares(E: list[str], G: list[str], grafo: Grafo, i: int, j: int, iteracao: int = 1):

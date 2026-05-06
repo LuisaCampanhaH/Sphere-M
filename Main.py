@@ -118,6 +118,8 @@ def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo, i: int, j: int, T
     if iteracao > 3: return
 
     print(f"\n=== ITERAÇÃO {iteracao} ===")
+    print(f"  E: {E}")
+    print(f"  G: {G}")
 
     leg: list[str] = []
     while i < TAM_E:
@@ -136,7 +138,7 @@ def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo, i: int, j: int, T
     print(f"  leg: {leg}")
 
     Buscar_Pares(G, leg, grafo, 0, 0, iteracao + 1)
-
+pass 
 
 def Buscar_Pares(E: list[str], G: list[str], grafo: Grafo, i: int, j: int, iteracao: int = 1):
     E = list(dict.fromkeys(E + G))

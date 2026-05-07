@@ -1,7 +1,22 @@
 # visualizacao.py
 from pyvis.network import Network
 
-def desenhar_grafo(grafo):
+PALETA_ITERACOES = [
+    {"base": "#720404", "borda": "#770404"},   # Vermelho (iter 1 — entradas)
+    {"base": "#1e6104", "borda": "#196b08"},   # Verde (conceitos iter 1)
+    {"base": "#04307a", "borda": "#083680"},   # Azul (conceitos iter 2)
+    {"base": "#6b4a00", "borda": "#7a5500"},   # Âmbar (conceitos iter 3)
+    {"base": "#4a0470", "borda": "#580880"},   # Roxo (conceitos iter 4)
+    {"base": "#047a6b", "borda": "#0a8878"},   # Teal (conceitos iter 5)
+]
+
+def _cor_da_iteracao(indice: int) -> dict:
+    idx = min(indice, len(PALETA_ITERACOES) - 1)
+    c = PALETA_ITERACOES[idx]
+    return {"background": c["base"], "border": c["borda"]}
+
+
+def desenhar_grafo(grafo, iteracao_atual: int = 1):
     net = Network(
         notebook=False,
         width="100%",
@@ -11,50 +26,42 @@ def desenhar_grafo(grafo):
         directed=False
     )
 
-    nos_leg = set()
-    nos_base = set()
-    for (leg, palavra, _) in grafo.FAO:
-        nos_leg.add(leg)
-        nos_base.add(palavra)
+    # Mapeia cada nó para a iteração em que apareceu pela primeira vez
+    nos_por_iteracao: dict[str, int] = {}
+    for (leg, palavra, _, iter_no) in grafo.FAO:
+        if leg not in nos_por_iteracao:
+            nos_por_iteracao[leg] = iter_no
+        if palavra not in nos_por_iteracao:
+            nos_por_iteracao[palavra] = 0  # 0 = entrada original (vermelho)
 
-    palavras_raiz = nos_base - nos_leg
-    todos_nos = nos_leg | nos_base
+    todos_nos = set(nos_por_iteracao.keys())
 
     for no in todos_nos:
-        if no in palavras_raiz:
-            net.add_node(no,
-                label=no,
-                color={"background": "#720404", "border": "#770404"},
-                size=50,                              # ← maior pra caber o texto
-                shape="dot",
-                font={"size": 14, "color": "#000000", "bold": True, "vadjust": 0},
-                shadow=True
-            )
-        else:
-            net.add_node(no,
-                label=no,
-                color={"background": "#1e6104", "border": "#196b08"},
-                size=50,
-                shape="dot",
-                font={"size": 13, "color": "#1a1a1a", "bold": True, "vadjust": 0},
-                shadow=True
-            )
+        iter_no = nos_por_iteracao[no]
+        cor = _cor_da_iteracao(iter_no)
+        net.add_node(no,
+            label=no,
+            color={"background": cor["background"], "border": cor["border"]},
+            size=50,
+            shape="dot",
+            font={"size": 14, "color": "#000000", "bold": True, "vadjust": 0},
+            shadow=True,
+            title=f"Iteração {iter_no if iter_no > 0 else 'entrada'}"
+        )
 
-    for (leg, palavra, peso) in grafo.FAO:
+    for (leg, palavra, peso, _) in grafo.FAO:
         net.add_edge(leg, palavra,
             label=peso,
             title=peso,
             color={"color": "#09079B", "opacity": 0.7},
             width=2,
-            font={"size": 14, "color": "#000000", "align": "middle"},  # ← tamanho maior
-            smooth=False   # ← linha reta
+            font={"size": 14, "color": "#000000", "align": "middle"},
+            smooth=False
         )
 
     net.set_options("""
     {
-      "layout": {
-        "randomSeed": 42
-      },
+      "layout": { "randomSeed": 42 },
       "physics": {
         "enabled": true,
         "barnesHut": {
@@ -65,11 +72,7 @@ def desenhar_grafo(grafo):
           "damping": 0.95,
           "avoidOverlap": 1
         },
-        "stabilization": {
-          "enabled": true,
-          "iterations": 300,
-          "fit": true
-        },
+        "stabilization": { "enabled": true, "iterations": 300, "fit": true },
         "minVelocity": 0.5,
         "maxVelocity": 5
       },

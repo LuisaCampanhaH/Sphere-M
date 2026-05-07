@@ -1,7 +1,13 @@
+import os
+from dotenv import load_dotenv
 import networkx as nx
 from pyvis.network import Network
+from mistralai.client import Mistral
 from visualizacao import desenhar_grafo
 
+load_dotenv()
+minha_chave = os.getenv("minha_api_key")
+cliente = Mistral(api_key=minha_chave)
 
 class No_Grafo:
     def __init__(self, valor: str, vizinhos: list['No_Grafo'] = None):
@@ -42,7 +48,42 @@ class Grafo:
 
 def Analise_Ia(ei: str, gi: str) -> str:
     # RETORNA O CONCEITO QUE RELACIONA EI e GI
-    pass
+    # ORDEM NÃO IMPORTA: {a, b} == {b, a}
+    resposta = cliente.chat.complete(
+        model="mistral-small-latest",
+        messages=[
+            {
+                "role":"user",
+                "content": f"""
+                Identifique palavras isoladas, como substantivos ou adjetivos, que relacionem as duas palavras fornecidas abaixo. É estritamente proibido o uso
+                de frases, sentenças, verbos de ligação, explicações ou conectivos lógicos como 'é um tipo de' ou 'faz parte de'. 
+                O foco deve ser em atributos, características e associações diretas.
+                Responda APENAS com uma lista enumerada das palavras encontradas, sem explicações extras e sem frases, apenas palavras. 
+
+                Palavra A: {ei}
+                Palavra B: {gi}
+                """
+            }
+        ]
+    )
+
+    texto = resposta.choices[0].message.content.strip()
+    linhas = texto.split("\n")
+    relacoes = [l.split(".", 1)[-1].strip() for l in linhas if l.strip() and l[0].isdigit()]
+
+    print(f"\nRelações entre '{ei}' e '{gi}':")
+    for i, r in enumerate(relacoes, 1):
+        print(f" {i} . {r}")
+
+    escolha = 1
+    while escolha != 0:
+        try:
+            escolha = int(input("\nEscolha o número: (Digite 0 para PARAR)\n"))
+            if 1 <= escolha <= len(relacoes):
+                return relacoes[escolha - 1]
+        except ValueError:
+            pass
+        print("Numero invalido, tente outro")
 
 
 def Buscar_Relacoes(grafo: Grafo, ei: str, gi: str) -> str:
@@ -57,9 +98,9 @@ def Buscar_Relacoes(grafo: Grafo, ei: str, gi: str) -> str:
 
 
 def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo, iteracao: int, pares_vistos: set):
-    print(f"\n=== ITERAÇÃO {iteracao} ===")
+    """print(f"\n=== ITERAÇÃO {iteracao} ===")
     print(f"  E: {E}")
-    print(f"  G: {G}")
+    print(f"  G: {G}")"""
 
     leg: list[str] = []  # CONCEITOS GERADOS NESSA ITERAÇÃO
 

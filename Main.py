@@ -42,26 +42,7 @@ class Grafo:
 
 def Analise_Ia(ei: str, gi: str) -> str:
     # RETORNA O CONCEITO QUE RELACIONA EI e GI
-    # ORDEM NÃO IMPORTA: {a, b} == {b, a}
-    par = {ei, gi}
-
-    # ITERAÇÃO 1
-    if   par == {"cachorro", "gato"}:   return "pet"
-    elif par == {"cachorro", "animal"}: return "canino"
-    elif par == {"gato",     "animal"}: return "felino"
-
-    # ITERAÇÃO 2
-    elif par == {"cachorro", "pet"}:    return "fiel"
-    elif par == {"gato",     "pet"}:    return "companhia"
-    elif par == {"animal",   "pet"}:    return "doméstico"
-    elif par == {"canino",   "felino"}: return "carnívoro"
-    elif par == {"pet",      "canino"}: return "cãozinho"
-    elif par == {"pet",      "felino"}: return "gatinho"
-    elif par == {"animal",   "canino"}: return "lobo"
-    elif par == {"animal",   "felino"}: return "leão"
-
-    # ITERAÇÃO 3+ — RESPOSTA GENÉRICA
-    else: return f"rel_{ei[:3]}_{gi[:3]}"
+    pass
 
 
 def Buscar_Relacoes(grafo: Grafo, ei: str, gi: str) -> str:
@@ -124,12 +105,13 @@ def Buscar_Pares(E: list[str], G: list[str], grafo: Grafo, iteracao: int = 1, pa
     Buscar_Pares_Aux(E, G, grafo, iteracao, pares_vistos)
 
 
-def teste():
-    grafo = Grafo()
-    E = ["cachorro", "gato", "animal"]
-    G = ["cachorro", "gato", "animal"]
-    Buscar_Pares(E, G, grafo)
-
-
 if __name__ == "__main__":
-    teste()
+    grafo = Grafo()
+    Teto = input("Digite a primeira palavra: ").strip()
+    Piso = input("Digite a segunda palavra: ").strip()
+    R = [p.strip() for p in input("Digite as palavras relacionadas ao tema, separadas por vírgula: ").split(",")]
+    
+    E = list(dict.fromkeys([Teto, Piso] + R))  # UNIÃO SEM DUPLICATAS
+    G = E.copy()                                # CÓPIA INDEPENDENTE DE E
+    
+    Buscar_Pares(E, G, grafo)

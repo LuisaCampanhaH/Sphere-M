@@ -47,18 +47,18 @@ class Grafo:
 
 
 def Analise_Ia(ei: str, gi: str) -> str:
-    # RETORNA O CONCEITO QUE RELACIONA EI e GI
-    # ORDEM NÃO IMPORTA: {a, b} == {b, a}
     resposta = cliente.chat.complete(
         model="mistral-small-latest",
         messages=[
             {
-                "role":"user",
+                "role": "user",
                 "content": f"""
-                Identifique palavras isoladas, como substantivos ou adjetivos, que relacionem as duas palavras fornecidas abaixo. É estritamente proibido o uso
-                de frases, sentenças, verbos de ligação, explicações ou conectivos lógicos como 'é um tipo de' ou 'faz parte de'. 
-                O foco deve ser em atributos, características e associações diretas.
-                Responda APENAS com uma lista enumerada das palavras encontradas, sem explicações extras e sem frases, apenas palavras. 
+                Liste 5 palavras DIFERENTES que relacionem as duas palavras abaixo.
+                Cada palavra deve ser ÚNICA e distinta das outras.
+                Proibido repetir palavras.
+                Proibido usar frases, verbos ou conectivos.
+                Apenas substantivos ou adjetivos isolados.
+                Responda SOMENTE com uma lista numerada, sem explicações.
 
                 Palavra A: {ei}
                 Palavra B: {gi}
@@ -70,6 +70,9 @@ def Analise_Ia(ei: str, gi: str) -> str:
     texto = resposta.choices[0].message.content.strip()
     linhas = texto.split("\n")
     relacoes = [l.split(".", 1)[-1].strip() for l in linhas if l.strip() and l[0].isdigit()]
+    
+    # Remove duplicatas mantendo ordem
+    relacoes = list(dict.fromkeys(relacoes))
 
     print(f"\nRelações entre '{ei}' e '{gi}':")
     for i, r in enumerate(relacoes, 1):
@@ -136,6 +139,7 @@ def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo, iteracao: int, pa
         return
 
     Buscar_Pares(E, leg, grafo, iteracao + 1, pares_vistos)
+pass
 
 
 def Buscar_Pares(E: list[str], G: list[str], grafo: Grafo, iteracao: int = 1, pares_vistos: set = None):
@@ -144,6 +148,7 @@ def Buscar_Pares(E: list[str], G: list[str], grafo: Grafo, iteracao: int = 1, pa
 
     E = list(dict.fromkeys(E + G))  # UNIÃO DE E e G SEM DUPLICATAS
     Buscar_Pares_Aux(E, G, grafo, iteracao, pares_vistos)
+pass
 
 
 if __name__ == "__main__":
@@ -153,6 +158,6 @@ if __name__ == "__main__":
     R = [p.strip() for p in input("Digite as palavras relacionadas ao tema, separadas por vírgula: ").split(",")]
     
     E = list(dict.fromkeys([Teto, Piso] + R))  # UNIÃO SEM DUPLICATAS
-    G = E.copy()                                # CÓPIA INDEPENDENTE DE E
+    G = E.copy()                               # CÓPIA INDEPENDENTE DE E
     
     Buscar_Pares(E, G, grafo)

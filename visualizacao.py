@@ -23,7 +23,7 @@ def desenhar_grafo(grafo):
         height="900px",
         bgcolor="#ffffff",
         font_color="#000000",
-        directed=False
+        directed=True
     )
 
     # Coleta todos os valores que aparecem nas arestas FAO
@@ -78,10 +78,11 @@ def desenhar_grafo(grafo):
             leg, palavra,
             label=peso,
             title=peso,
-            color={"color": "#555555", "opacity": 0.6},
+            color={"color": "#111111", "opacity": 1.0},
             width=2,
             font={"size": 12, "color": "#333333", "align": "middle"},
-            smooth=False
+            smooth=False,
+            arrows={"to": {"enabled": True, "scaleFactor": 1.2}}
         )
 
     # Legenda injetada como HTML fixo no canto

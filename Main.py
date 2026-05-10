@@ -16,11 +16,12 @@ TIPOS_AOF_REF = "is-a | is-part-of | is-composed-by | is-a-variation-of"
 
 class No_Grafo:
     def __init__(self, valor: str, vizinhos: list['No_Grafo'] = None):
-        self.valor    = valor
-        self.vizinhos = [] if vizinhos is None else vizinhos
-        self.achou_teto = False
-        self.achou_piso = False
-        self.papel: str = "gerado"
+        self.valor        = valor
+        self.vizinhos     = [] if vizinhos is None else vizinhos  # arestas de saida
+        self.vizinhos_inv = []                                    # arestas de entrada
+        self.achou_teto   = False
+        self.achou_piso   = False
+        self.papel: str   = "gerado"
 
 
 class Grafo:
@@ -70,22 +71,28 @@ class Grafo:
         return novo
 
     def Adicionar_No(self, leg: str, ei: str, gi: str):
+        """
+        Cria arestas direcionadas: ei -> leg -> gi.
+        vizinhos_inv armazena arestas de entrada para propagacao
+        de marcas no sentido inverso sem tornar o grafo nao-direcionado.
+        """
         no_leg = self.Buscar_No(leg)
         no_ei  = self.Buscar_No(ei)
         no_gi  = self.Buscar_No(gi)
 
-        for a, b in [(no_leg, no_ei), (no_leg, no_gi),
-                    (no_ei, no_leg), (no_gi, no_leg)]:
-            if b not in a.vizinhos:
-                a.vizinhos.append(b)
+        for origem, destino in [(no_ei, no_leg), (no_leg, no_gi)]:
+            if destino not in origem.vizinhos:
+                origem.vizinhos.append(destino)
+            if origem not in destino.vizinhos_inv:
+                destino.vizinhos_inv.append(origem)
 
         self._Propagar_Marcas()
 
     def Adicionar_FAO(self, ei: str, leg: str, tipo_ei_leg: str,
                       gi: str, tipo_leg_gi: str):
         """
-        Salva as arestas com o tipo ontologico confirmado pelo humano.
-        Formato: (origem, destino, tipo_relacao)
+        Salva as arestas direcionadas com o tipo ontologico confirmado.
+        Formato: (origem, destino, tipo_relacao) - consistente com vizinhos direcionados.
         """
         self.FAO.append((ei,  leg, tipo_ei_leg))
         self.FAO.append((leg, gi,  tipo_leg_gi))
@@ -104,12 +111,18 @@ class Grafo:
         self.L.append((gi, ei, [leg]))
 
     def _Propagar_Marcas(self):
-        for flag in ("achou_teto", "achou_piso"):
+        """
+        Propaga marcas respeitando a direcionalidade:
+        - achou_teto: segue arestas de saida (vizinhos) -- de C descendo ate F.
+        - achou_piso: segue arestas de entrada (vizinhos_inv) -- de F subindo ate C.
+        """
+        for flag, attr_viz in (("achou_teto", "vizinhos"),
+                               ("achou_piso",  "vizinhos_inv")):
             fila   = [no for no in self.Nodes if getattr(no, flag)]
             vistos = set(id(no) for no in fila)
             while fila:
                 atual = fila.pop(0)
-                for vizinho in atual.vizinhos:
+                for vizinho in getattr(atual, attr_viz):
                     if not getattr(vizinho, flag):
                         setattr(vizinho, flag, True)
                         if id(vizinho) not in vistos:
@@ -382,7 +395,8 @@ def Buscar_Relacoes(grafo: Grafo, dominio: list[str],
     grafo.Adicionar_No(leg, ei, gi)
     grafo.Adicionar_FAO(ei, leg, tipo_ei_leg, gi, tipo_leg_gi)
     grafo.Adicionar_L(gi, ei, leg)
-    grafo.Registrar_Raio_Se_Necessario()
+    # Raio e condicao de parada sao checados so ao fim da iteracao completa,
+    # nao aqui — para nao fechar a esfera antes de G ser totalmente processado.
 
     print(f"\n  ok: '{ei}' -[{tipo_ei_leg}]-> '{leg}' -[{tipo_leg_gi}]-> '{gi}'")
     return leg
@@ -431,7 +445,11 @@ def _Perguntar_Visualizacao(grafo: Grafo):
 def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo,
                      iteracao: int, pares_vistos: set):
     leg_gerados: list[str] = []
-    dominio = list(dict.fromkeys(E + G))
+
+    # Algoritmo 1, linha 18: E ← E ∪ G no inicio de cada iteracao.
+    # G continua separado — e so ele que e cruzado com E nesta rodada.
+    E = list(dict.fromkeys(E + G))
+    dominio = E  # dominio completo conhecido ate aqui
 
     # Atualiza iteracao corrente no grafo (usada pelas metricas)
     grafo.iteracao_atual = iteracao
@@ -453,6 +471,9 @@ def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo,
     leg_gerados = list(dict.fromkeys(leg_gerados))
     print(f"\n  NOVOS TERMOS: {leg_gerados}")
 
+    # Raio e condicao de parada checados aqui — so apos todos os pares
+    # de E x G terem sido processados, nunca no meio da iteracao.
+    grafo.Registrar_Raio_Se_Necessario()
     _Imprimir_Status(grafo, iteracao)
 
     if grafo.Todos_Conectados():
@@ -461,6 +482,8 @@ def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo,
         return
 
     if leg_gerados:
+        # E ja foi atualizado (E ∪ G) nesta iteracao; proxima rodada cruza
+        # esse E expandido com os novos termos gerados (leg_gerados = novo G).
         Buscar_Pares(E, leg_gerados, grafo, iteracao + 1, pares_vistos)
     else:
         print("\n  Nenhum novo termo gerado e esfera incompleta. Encerrando.")
@@ -468,10 +491,11 @@ def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo,
 
 
 def Buscar_Pares(E: list[str], G: list[str], grafo: Grafo,
-                iteracao: int = 1, pares_vistos: set = None):
+                 iteracao: int = 1, pares_vistos: set = None):
     if pares_vistos is None:
         pares_vistos = set()
-    E = list(dict.fromkeys(E + G))
+    # E e G chegam separados; a fusao E ← E ∪ G e feita dentro de Buscar_Pares_Aux
+    # no inicio de cada iteracao, conforme o Algoritmo 1 linha 18.
     Buscar_Pares_Aux(E, G, grafo, iteracao, pares_vistos)
 
 

@@ -9,7 +9,7 @@ load_dotenv()
 minha_chave = os.getenv("minha_api_key")
 cliente = Mistral(api_key=minha_chave)
 
-# ── Tipos de relação (AOF) — referência para o prompt da IA ─────────────────
+#  Tipos de relação (AOF) — referência para o prompt da IA 
 # Humano digita livremente; a IA usa estes como guia no prompt.
 TIPOS_AOF_REF = "is-a | is-part-of | is-composed-by | is-a-variation-of"
 
@@ -22,7 +22,7 @@ class No_Grafo:
         self.achou_teto   = False
         self.achou_piso   = False
         self.papel: str   = "gerado"
-
+    pass
 
 class Grafo:
     def __init__(self, Nodes: list['No_Grafo'] = None):
@@ -39,6 +39,7 @@ class Grafo:
         # Metricas de processo
         self.raio: int | None = None   # iteracao em que a densidade atingiu 1.0
         self.iteracao_atual: int = 0   # atualizada pelo loop principal
+    pass
 
     def Inicializar(self, C: list[str], F: list[str], R: list[str]):
         self.C = list(dict.fromkeys(C))
@@ -58,9 +59,11 @@ class Grafo:
         for valor in self.R:
             no = self.Buscar_No(valor)
             no.papel = "relevant"
+    pass
 
     def Dominio(self) -> list[str]:
         return list(dict.fromkeys(self.C + self.F + self.R))
+    pass
 
     def Buscar_No(self, valor: str) -> No_Grafo:
         for no in self.Nodes:
@@ -69,13 +72,14 @@ class Grafo:
         novo = No_Grafo(valor=valor)
         self.Nodes.append(novo)
         return novo
-
+    pass
     def Adicionar_No(self, leg: str, ei: str, gi: str):
-        """
-        Cria arestas direcionadas: ei -> leg -> gi.
-        vizinhos_inv armazena arestas de entrada para propagacao
-        de marcas no sentido inverso sem tornar o grafo nao-direcionado.
-        """
+        # 
+        # Cria arestas direcionadas: ei -> leg -> gi.
+        # vizinhos_inv armazena arestas de entrada para propagacao
+        # de marcas no sentido inverso sem tornar o grafo nao-direcionado.
+        # 
+
         no_leg = self.Buscar_No(leg)
         no_ei  = self.Buscar_No(ei)
         no_gi  = self.Buscar_No(gi)
@@ -87,37 +91,40 @@ class Grafo:
                 destino.vizinhos_inv.append(origem)
 
         self._Propagar_Marcas()
+    pass
 
     def Adicionar_FAO(self, ei: str, leg: str, tipo_ei_leg: str,
-                      gi: str, tipo_leg_gi: str):
-        """
-        Salva as arestas direcionadas com o tipo ontologico confirmado.
-        Formato: (origem, destino, tipo_relacao) - consistente com vizinhos direcionados.
-        """
+                        gi: str, tipo_leg_gi: str):
+        # 
+        # Salva as arestas direcionadas com o tipo ontologico confirmado.
+        # Formato: (origem, destino, tipo_relacao) - consistente com vizinhos direcionados.
+        # 
         self.FAO.append((ei,  leg, tipo_ei_leg))
         self.FAO.append((leg, gi,  tipo_leg_gi))
+    pass
 
     def Adicionar_L(self, gi: str, ei: str, leg: str):
-        """
-        Registra a tripla (gi, ei, [intermediario]) no conjunto L do artigo.
-        Eficiencia = |L| / MAX,  onde MAX = |E|*(|E|-1)/2
-        Se o par ja existe, apenas acumula o intermediario na lista.
-        """
+        # 
+        # Registra a tripla (gi, ei, [intermediario]) no conjunto L do artigo.
+        # Eficiencia = |L| / MAX,  onde MAX = |E|*(|E|-1)/2
+        # Se o par ja existe, apenas acumula o intermediario na lista.
+        # 
         for entrada in self.L:
             if entrada[0] == gi and entrada[1] == ei:
                 if leg not in entrada[2]:
                     entrada[2].append(leg)
                 return
         self.L.append((gi, ei, [leg]))
+    pass
 
     def _Propagar_Marcas(self):
-        """
-        Propaga marcas respeitando a direcionalidade:
-        - achou_teto: segue arestas de saida (vizinhos) -- de C descendo ate F.
-        - achou_piso: segue arestas de entrada (vizinhos_inv) -- de F subindo ate C.
-        """
+        # 
+        # Propaga marcas respeitando a direcionalidade:
+        # - achou_teto: segue arestas de saida (vizinhos) -- de C descendo ate F.
+        # - achou_piso: segue arestas de entrada (vizinhos_inv) -- de F subindo ate C.
+        # 
         for flag, attr_viz in (("achou_teto", "vizinhos"),
-                               ("achou_piso",  "vizinhos_inv")):
+                            ("achou_piso",  "vizinhos_inv")):
             fila   = [no for no in self.Nodes if getattr(no, flag)]
             vistos = set(id(no) for no in fila)
             while fila:
@@ -128,15 +135,20 @@ class Grafo:
                         if id(vizinho) not in vistos:
                             fila.append(vizinho)
                             vistos.add(id(vizinho))
+    pass
 
     def Todos_Conectados(self) -> bool:
         return all(no.achou_teto and no.achou_piso for no in self.Nodes)
+    pass
 
     def Registrar_Raio_Se_Necessario(self):
-        """Grava o raio na primeira vez que a esfera fecha (densidade = 1.0)."""
+        # Grava o raio na primeira vez que a esfera fecha (densidade = 1.0).
+
         if self.raio is None and self.Todos_Conectados():
             self.raio = self.iteracao_atual
+    pass
 
+    #Calcula as metricas do artigo
     def Status_Conexao(self) -> dict:
         total      = len(self.Nodes)
         conectados = sum(1 for no in self.Nodes if no.achou_teto and no.achou_piso)
@@ -149,7 +161,7 @@ class Grafo:
             if not (no.achou_teto and no.achou_piso):
                 pendentes_por_papel[no.papel].append(no.valor)
 
-        # ── Metricas do artigo (secao 4.2) ──────────────────────────────────
+        #  Metricas do artigo (secao 4.2) 
         densidade = round(conectados / total, 3) if total > 0 else 0
 
         # Eficiencia = |L| / MAX,  MAX = |E|*(|E|-1)/2
@@ -177,18 +189,18 @@ class Grafo:
             "produtividade"      : produtividade,
             "pendentes_por_papel": pendentes_por_papel,
         }
+    pass
 
-
-# ── Helpers AOF ──────────────────────────────────────────────────────────────
+#  Helpers AOF 
 
 
 def _Confirmar_Tipo(label_origem: str, label_destino: str,
                     tipo_sugerido: str) -> str:
-    """
-    Mostra o tipo sugerido pela IA e pede confirmacao do humano.
-    Se recusar ou IA nao inferiu, humano digita livremente o tipo.
-    Retorna o tipo confirmado/corrigido.
-    """
+    # 
+    # Mostra o tipo sugerido pela IA e pede confirmacao do humano.
+    # Se recusar ou IA nao inferiu, humano digita livremente o tipo.
+    # Retorna o tipo confirmado/corrigido.
+    # 
     print(f"\n  Relacao [{label_origem}] -> [{label_destino}]")
     print(f"  IA sugere: {tipo_sugerido if tipo_sugerido else '(nao identificado)'}")
 
@@ -208,17 +220,17 @@ def _Confirmar_Tipo(label_origem: str, label_destino: str,
         if tipo:
             return tipo
         print("  Tipo nao pode ser vazio.")
+pass
 
-
-# ── IA ───────────────────────────────────────────────────────────────────────
+#  IA 
 
 def Verificar_Relacao_Ia(dominio: list[str], gi: str, ei: str) -> tuple[bool, str]:
-    """
-    PASSO 1 do Algoritmo 2: determina se ha relacao entre gi e ei no dominio.
-    Retorna (ha_relacao, descricao_da_relacao).
-    Corresponde ao prompt da linha 6 do Algoritmo 2:
-      'Determine se ha uma relacao entre gi e ei. Se houver, descreva a relacao.'
-    """
+    # 
+    # PASSO 1 do Algoritmo 2: determina se ha relacao entre gi e ei no dominio.
+    # Retorna (ha_relacao, descricao_da_relacao).
+    # Corresponde ao prompt da linha 6 do Algoritmo 2:
+    #  'Determine se ha uma relacao entre gi e ei. Se houver, descreva a relacao.'
+    # 
     dominio_str = ", ".join(dominio)
     resposta = cliente.chat.complete(
         model="mistral-small-latest",
@@ -226,12 +238,10 @@ def Verificar_Relacao_Ia(dominio: list[str], gi: str, ei: str) -> tuple[bool, st
             {
                 "role": "user",
                 "content": f"""Dado o dominio composto por: {dominio_str}
-
-Determine se ha uma relacao ontologica entre '{gi}' e '{ei}'.
-
-Responda EXATAMENTE neste formato (sem texto extra):
-HA_RELACAO: sim | nao
-DESCRICAO: <descricao breve da relacao, ou 'nenhuma'>"""
+                Determine se ha uma relacao ontologica entre '{gi}' e '{ei}'.
+                Responda EXATAMENTE neste formato (sem texto extra):
+                HA_RELACAO: sim | nao
+                DESCRICAO: <descricao breve da relacao, ou 'nenhuma'>"""
             }
         ]
     )
@@ -247,15 +257,15 @@ DESCRICAO: <descricao breve da relacao, ou 'nenhuma'>"""
             break
 
     return ha_relacao, descricao
-
+pass
 
 def Sugerir_Intermediarios_Ia(dominio: list[str], ei: str, gi: str,
-                               descricao_relacao: str) -> list[str]:
-    """
-    PASSO 2 do Algoritmo 2: dado que ha relacao (confirmada no passo 1),
-    sugere conceitos intermediarios (leg) que materializam essa relacao.
-    Corresponde à geracao de LEG pela IA com human-in-loop (linha 7 do Alg 2).
-    """
+                                descricao_relacao: str) -> list[str]:
+    # 
+    # PASSO 2 do Algoritmo 2: dado que ha relacao (confirmada no passo 1),
+    # sugere conceitos intermediarios (leg) que materializam essa relacao.
+    # Corresponde à geracao de LEG pela IA com human-in-loop (linha 7 do Alg 2).
+    # 
     dominio_str = ", ".join(dominio)
     resposta = cliente.chat.complete(
         model="mistral-small-latest",
@@ -263,16 +273,13 @@ def Sugerir_Intermediarios_Ia(dominio: list[str], ei: str, gi: str,
             {
                 "role": "user",
                 "content": f"""Dado o dominio composto por: {dominio_str}
-
-Foi identificada a seguinte relacao entre '{ei}' e '{gi}': {descricao_relacao}
-
-Sugira ate 5 conceitos intermediarios que representem essa relacao,
-podendo ser inseridos entre '{ei}' e '{gi}' no grafo ontologico.
-
-Formato obrigatorio (sem explicacoes, sem texto extra):
-1. <conceito>
-2. <conceito>
-..."""
+                Foi identificada a seguinte relacao entre '{ei}' e '{gi}': {descricao_relacao}
+                Sugira ate 5 conceitos intermediarios que representem essa relacao,
+                podendo ser inseridos entre '{ei}' e '{gi}' no grafo ontologico.
+                Formato obrigatorio (sem explicacoes, sem texto extra):
+                1. <conceito>
+                2. <conceito>
+                ..."""
             }
         ]
     )
@@ -289,13 +296,13 @@ Formato obrigatorio (sem explicacoes, sem texto extra):
             resultados.append(conceito)
 
     return resultados
-
+pass
 
 def Sugerir_Tipo_Ia(dominio: list[str], origem: str, destino: str) -> str:
-    """
-    Pede a IA o tipo de relacao entre dois conceitos (AOF).
-    Retorna o tipo sugerido ou string vazia se nao identificado.
-    """
+    # 
+    # Pede a IA o tipo de relacao entre dois conceitos (AOF).
+    # Retorna o tipo sugerido ou string vazia se nao identificado.
+    # 
     dominio_str = ", ".join(dominio)
     resposta = cliente.chat.complete(
         model="mistral-small-latest",
@@ -303,10 +310,9 @@ def Sugerir_Tipo_Ia(dominio: list[str], origem: str, destino: str) -> str:
             {
                 "role": "user",
                 "content": f"""Dado o dominio: {dominio_str}
-
-Qual o tipo de relacao entre '{origem}' e '{destino}'?
-Responda com apenas UM dos tipos abaixo, sem explicacoes:
-{TIPOS_AOF_REF}"""
+                Qual o tipo de relacao entre '{origem}' e '{destino}'?
+                Responda com apenas UM dos tipos abaixo, sem explicacoes:
+                {TIPOS_AOF_REF}"""
             }
         ]
     )
@@ -316,41 +322,41 @@ Responda com apenas UM dos tipos abaixo, sem explicacoes:
         if t.lower() in tipo:
             return t
     return ""
-
+pass
 
 def Buscar_Relacoes(grafo: Grafo, dominio: list[str],
                     ei: str, gi: str) -> str | None:
-    """
-    Fluxo fiel ao Algoritmo 2 (buscaRelacoes):
+    # 
+    # Fluxo fiel ao Algoritmo 2 (buscaRelacoes):
 
-    PASSO 1 — IA determina SE ha relacao entre gi e ei e descreve qual e.
-              (linha 6 do Alg 2: 'Determine se ha uma relacao entre gi e ei.')
-    PASSO 2 — Humano confirma (HITL) se a relacao identificada e valida.
-              (linha 8 do Alg 2: 'if houver relacao, por intervencao humana')
-    PASSO 3 — IA sugere conceitos intermediarios (LEG) para materializar
-              a relacao confirmada. Humano escolhe qual incluir.
-              (linha 7 do Alg 2: 'LEG <- Lista de entes gerados pela IA com HITL')
-    PASSO 4 — IA sugere o tipo AOF de cada aresta; humano confirma/corrige.
-    PASSO 5 — Grafo, FAO e L sao atualizados.
+    # PASSO 1 — IA determina SE ha relacao entre gi e ei e descreve qual e.
+    #         (linha 6 do Alg 2: 'Determine se ha uma relacao entre gi e ei.')
+    # PASSO 2 — Humano confirma (HITL) se a relacao identificada e valida.
+    #         (linha 8 do Alg 2: 'if houver relacao, por intervencao humana')
+    # PASSO 3 — IA sugere conceitos intermediarios (LEG) para materializar
+    #         a relacao confirmada. Humano escolhe qual incluir.
+    #         (linha 7 do Alg 2: 'LEG <- Lista de entes gerados pela IA com HITL')
+    # PASSO 4 — IA sugere o tipo AOF de cada aresta; humano confirma/corrige.
+    # PASSO 5 — Grafo, FAO e L sao atualizados.
 
-    Retorna o intermediario inserido ou None se nenhuma relacao foi aceita.
-    """
+    # Retorna o intermediario inserido ou None se nenhuma relacao foi aceita.
+    # 
     print(f"\n{'─'*50}")
     print(f"  Par: '{gi}'  ×  '{ei}'")
 
-    # ── PASSO 1: IA verifica existencia da relacao ───────────────────────────
+    #  PASSO 1: IA verifica existencia da relacao 
     ha_relacao, descricao = Verificar_Relacao_Ia(dominio, gi, ei)
 
     if not ha_relacao:
         print(f"  IA: nenhuma relacao identificada entre '{gi}' e '{ei}'.")
-        # ── HITL: humano pode discordar e forcar a relacao ───────────────────
+        #  HITL: humano pode discordar e forcar a relacao 
         forcou = input("  Voce identifica alguma relacao mesmo assim? (s/n): ").strip().lower()
         if forcou != 's':
             return None
         descricao = input("  Descreva a relacao: ").strip()
     else:
         print(f"  IA: relacao identificada — {descricao}")
-        # ── PASSO 2: HITL confirma se a relacao e valida ─────────────────────
+        #  PASSO 2: HITL confirma se a relacao e valida 
         confirma = input("  Confirma essa relacao? (s/n): ").strip().lower()
         if confirma != 's':
             outro = input("  Descreva a relacao correta (ou deixe vazio para ignorar): ").strip()
@@ -358,7 +364,7 @@ def Buscar_Relacoes(grafo: Grafo, dominio: list[str],
                 return None
             descricao = outro
 
-    # ── PASSO 3: IA sugere intermediarios; humano escolhe (HITL) ─────────────
+    #  PASSO 3: IA sugere intermediarios; humano escolhe (HITL) 
     sugestoes = Sugerir_Intermediarios_Ia(dominio, ei, gi, descricao)
 
     if not sugestoes:
@@ -387,11 +393,11 @@ def Buscar_Relacoes(grafo: Grafo, dominio: list[str],
 
     leg = sugestoes[escolha]
 
-    # ── PASSO 4: tipos AOF das arestas; humano confirma/corrige ──────────────
+    #  PASSO 4: tipos AOF das arestas; humano confirma/corrige 
     tipo_ei_leg = _Confirmar_Tipo(ei,  leg, Sugerir_Tipo_Ia(dominio, ei,  leg))
     tipo_leg_gi = _Confirmar_Tipo(leg, gi,  Sugerir_Tipo_Ia(dominio, leg, gi))
 
-    # ── PASSO 5: atualiza estruturas ─────────────────────────────────────────
+    #  PASSO 5: atualiza estruturas 
     grafo.Adicionar_No(leg, ei, gi)
     grafo.Adicionar_FAO(ei, leg, tipo_ei_leg, gi, tipo_leg_gi)
     grafo.Adicionar_L(gi, ei, leg)
@@ -400,9 +406,9 @@ def Buscar_Relacoes(grafo: Grafo, dominio: list[str],
 
     print(f"\n  ok: '{ei}' -[{tipo_ei_leg}]-> '{leg}' -[{tipo_leg_gi}]-> '{gi}'")
     return leg
+pass
 
-
-# ── Exibicao ─────────────────────────────────────────────────────────────────
+# = Exibicao 
 
 def _Imprimir_Status(grafo: Grafo, iteracao: int):
     s = grafo.Status_Conexao()
@@ -421,7 +427,7 @@ def _Imprimir_Status(grafo: Grafo, iteracao: int):
     print(f"  Raio da esfera           : {raio_str}")
     print(f"  Densidade                : {s['densidade']}")
     print(f"  Eficiencia da iteracao   : {s['eficiencia']}  "
-          f"({s['num_relacoes']} rel. / {s['max_relacoes']} possiveis)")
+            f"({s['num_relacoes']} rel. / {s['max_relacoes']} possiveis)")
     prod = s['produtividade']
     prod_str = str(prod) if prod else "n/a (esfera ainda aberta)"
     print(f"  Produtividade da esfera  : {prod_str}")
@@ -429,21 +435,21 @@ def _Imprimir_Status(grafo: Grafo, iteracao: int):
         if nos:
             print(f"  Pendentes [{papel:8s}]     : {nos}")
     print(f"{'='*44}")
-
+pass
 
 def _Perguntar_Visualizacao(grafo: Grafo):
     ver = input("\nDeseja visualizar o grafo agora? (s/n): ").strip().lower()
     if ver == 's':
         desenhar_grafo(grafo)
+pass
 
 
 
 
-
-# ── Busca de pares ────────────────────────────────────────────────────────────
+#  Busca de pares 
 
 def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo,
-                     iteracao: int, pares_vistos: set):
+                    iteracao: int, pares_vistos: set):
     leg_gerados: list[str] = []
 
     # Algoritmo 1, linha 18: E ← E ∪ G no inicio de cada iteracao.
@@ -488,18 +494,18 @@ def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo,
     else:
         print("\n  Nenhum novo termo gerado e esfera incompleta. Encerrando.")
         _Perguntar_Visualizacao(grafo)
-
+pass
 
 def Buscar_Pares(E: list[str], G: list[str], grafo: Grafo,
-                 iteracao: int = 1, pares_vistos: set = None):
+                iteracao: int = 1, pares_vistos: set = None):
     if pares_vistos is None:
         pares_vistos = set()
     # E e G chegam separados; a fusao E ← E ∪ G e feita dentro de Buscar_Pares_Aux
     # no inicio de cada iteracao, conforme o Algoritmo 1 linha 18.
     Buscar_Pares_Aux(E, G, grafo, iteracao, pares_vistos)
+pass
 
-
-# ── Entrypoint ────────────────────────────────────────────────────────────────
+#  Entrypoint 
 
 if __name__ == "__main__":
     grafo = Grafo()

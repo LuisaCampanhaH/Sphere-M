@@ -1,5 +1,7 @@
-import os
+import os 
 from dotenv import load_dotenv
+import time
+from requests.exceptions import ConnectionError, Timeout
 import networkx as nx
 from pyvis.network import Network
 from mistralai.client import Mistral
@@ -8,6 +10,74 @@ from visualizacao import desenhar_grafo
 load_dotenv()
 minha_chave = os.getenv("minha_api_key")
 cliente = Mistral(api_key=minha_chave)
+
+#
+# Função para evitar que a falha na conexão da API trave o código e impeça o usuário de continuar utilizando 
+# o algoritmo
+#
+# A função, assim que da erro na chamada da API, ela automaticamente tenta reconectar 3 vezes
+# Após as 3 tentativas e mesmo assim ainda não conseguir reconectar, o algoritmo oferece 3 opções
+# uma de tentar novamente, para tentar mais uma vez a reconexão
+# uma de simplesmente ignorar a consulta e passar para o próximo par de palavras a serem analisadas
+# e a última opção, que oferece ao usuário a possibilidade dele mesmo digitar a relação em questão
+def chamar_api_seguro(messages, tentativas=3):
+    """
+    Faz chamadas para a API da Mistral com tratamento de erro.
+    Evita que o programa feche quando:
+    - internet cai
+    - API falha
+    - timeout acontece
+    """
+
+    for tentativa in range(1, tentativas + 1):
+
+        try:
+            resposta = cliente.chat.complete(
+                model="mistral-small-latest",
+                messages=messages,
+                timeout_ms=10000
+            )
+
+            return resposta
+
+        except Exception as erro:
+
+            print("\n" + "="*50)
+            print(" ERRO ao conectar com API ")
+            print("="*50)
+
+            print(f"\nTentativa {tentativa}/{tentativas}")
+            print(f"Detalhes do erro: {erro}")
+
+            if tentativa < tentativas:
+                print("\nTentando novamente em 3 segundos...")
+                time.sleep(3)
+
+            else:
+                print("\nNao foi possivel conectar com a API.")
+
+                while True:
+
+                    escolha = input("""
+                        O que deseja fazer?
+
+                        1 - tentar novamente
+                        2 - ignorar esta consulta
+                        3 - inserir resposta manualmente
+
+                        Escolha: """).strip()
+
+                    if escolha == "1":
+                        return chamar_api_seguro(messages, tentativas)
+
+                    elif escolha == "2":
+                        return None
+
+                    elif escolha == "3":
+                        return "MANUAL"
+
+                    else:
+                        print("Opcao invalida.")
 
 #  Tipos de relação (AOF) — referência para o prompt da IA 
 # Humano digita livremente; a IA usa estes como guia no prompt.
@@ -232,9 +302,7 @@ def Verificar_Relacao_Ia(dominio: list[str], gi: str, ei: str) -> tuple[bool, st
     #  'Determine se ha uma relacao entre gi e ei. Se houver, descreva a relacao.'
     # 
     dominio_str = ", ".join(dominio)
-    resposta = cliente.chat.complete(
-        model="mistral-small-latest",
-        messages=[
+    resposta = chamar_api_seguro([
             {
                 "role": "user",
                 "content": f"""Dado o dominio composto por: {dominio_str}
@@ -246,17 +314,29 @@ def Verificar_Relacao_Ia(dominio: list[str], gi: str, ei: str) -> tuple[bool, st
         ]
     )
 
-    texto = resposta.choices[0].message.content.strip().lower()
+    if resposta is None:
+        return False, "falha de conexão"
+    
+    if resposta == "MANUAL":
 
-    ha_relacao = "ha_relacao: sim" in texto
+        descricao = input("\nDigite manualmente a descrição da relação: ").strip()
+        return True, descricao
+    
+    try:
+        texto = resposta.choices[0].message.content.strip().lower()
 
-    descricao = ""
-    for linha in texto.split("\n"):
-        if linha.startswith("descricao:"):
-            descricao = linha.split(":", 1)[-1].strip()
-            break
+        ha_relacao = "ha_relacao: sim" in texto
 
-    return ha_relacao, descricao
+        descricao = ""
+        for linha in texto.split("\n"):
+            if linha.startswith("descricao:"):
+                descricao = linha.split(":", 1)[-1].strip()
+                break
+
+        return ha_relacao, descricao
+    except Exception as erro:
+        print(f"\nErro ao processar resposta da IA: {erro}")
+        return False, "erro ao interpretar resposta"
 pass
 
 def Sugerir_Intermediarios_Ia(dominio: list[str], ei: str, gi: str,
@@ -267,9 +347,7 @@ def Sugerir_Intermediarios_Ia(dominio: list[str], ei: str, gi: str,
     # Corresponde à geracao de LEG pela IA com human-in-loop (linha 7 do Alg 2).
     # 
     dominio_str = ", ".join(dominio)
-    resposta = cliente.chat.complete(
-        model="mistral-small-latest",
-        messages=[
+    resposta = chamar_api_seguro([
             {
                 "role": "user",
                 "content": f"""Dado o dominio composto por: {dominio_str}
@@ -284,18 +362,34 @@ def Sugerir_Intermediarios_Ia(dominio: list[str], ei: str, gi: str,
         ]
     )
 
-    texto  = resposta.choices[0].message.content.strip()
-    linhas = texto.split("\n")
+    if resposta is None:
+        return []
+    
+    if resposta == "MANUAL":
+        manual = input("\nDigite conceitos separados por virgula: ").strip()
 
-    resultados = []
-    for linha in linhas:
-        if not linha.strip() or not linha[0].isdigit():
-            continue
-        conceito = linha.split(".", 1)[-1].strip()
-        if conceito:
-            resultados.append(conceito)
+        return[x.strip()
+               for x in manual.split(",")
+               if x.strip()]
+    
+    try:
+        texto = resposta.choices[0].message.content.strip()
+        resultados = []
 
-    return resultados
+        for linha in texto.split("\n"):
+            if linha.strip() and linha[0].isdigit():
+                conceito = linha.split(".", 1)[-1].strip()
+                if conceito:
+                    resultados.append(conceito)
+
+        return resultados
+
+    except Exception as erro:
+
+        print(f"\nErro ao interpretar intermediarios: {erro}")
+
+        return []
+
 pass
 
 def Sugerir_Tipo_Ia(dominio: list[str], origem: str, destino: str) -> str:
@@ -304,9 +398,7 @@ def Sugerir_Tipo_Ia(dominio: list[str], origem: str, destino: str) -> str:
     # Retorna o tipo sugerido ou string vazia se nao identificado.
     # 
     dominio_str = ", ".join(dominio)
-    resposta = cliente.chat.complete(
-        model="mistral-small-latest",
-        messages=[
+    resposta = chamar_api_seguro([
             {
                 "role": "user",
                 "content": f"""Dado o dominio: {dominio_str}
@@ -317,11 +409,38 @@ def Sugerir_Tipo_Ia(dominio: list[str], origem: str, destino: str) -> str:
         ]
     )
 
-    tipo = resposta.choices[0].message.content.strip().lower()
-    for t in TIPOS_AOF_REF.split(" | "):
-        if t.lower() in tipo:
-            return t
-    return ""
+    if resposta is None:
+        return ""
+
+    if resposta == "MANUAL":
+
+        return input(
+            "\nDigite manualmente o tipo da relacao: "
+        ).strip()
+
+    try:
+
+        tipo = (
+            resposta
+            .choices[0]
+            .message
+            .content
+            .strip()
+            .lower()
+        )
+
+        for t in TIPOS_AOF_REF.split(" | "):
+
+            if t.lower() in tipo:
+                return t
+
+        return ""
+
+    except Exception as erro:
+
+        print(f"\nErro ao interpretar tipo: {erro}")
+
+        return ""
 pass
 
 def Buscar_Relacoes(grafo: Grafo, dominio: list[str],

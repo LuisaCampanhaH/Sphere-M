@@ -340,12 +340,19 @@ def Verificar_Relacao_Ia(dominio: list[str], gi: str, ei: str) -> tuple[bool, st
 pass
 
 def Sugerir_Intermediarios_Ia(dominio: list[str], ei: str, gi: str,
-                                descricao_relacao: str) -> list[str]:
+                                descricao_relacao: str,
+                                excluir: list[str] = None) -> list[str]:
     # 
     # PASSO 2 do Algoritmo 2: dado que ha relacao (confirmada no passo 1),
     # sugere conceitos intermediarios (leg) que materializam essa relacao.
-    # Corresponde à geracao de LEG pela IA com human-in-loop (linha 7 do Alg 2).
+    # excluir: lista de conceitos ja recusados pelo humano — a IA nao pode repeti-los.
     # 
+    excluir = excluir or []
+    excluir_str = (
+        f"\nNAO repita os seguintes conceitos ja recusados: {', '.join(excluir)}."
+        if excluir else ""
+    )
+
     dominio_str = ", ".join(dominio)
     resposta = chamar_api_seguro([
             {
@@ -353,7 +360,7 @@ def Sugerir_Intermediarios_Ia(dominio: list[str], ei: str, gi: str,
                 "content": f"""Dado o dominio composto por: {dominio_str}
                 Foi identificada a seguinte relacao entre '{ei}' e '{gi}': {descricao_relacao}
                 Sugira ate 5 conceitos intermediarios que representem essa relacao,
-                podendo ser inseridos entre '{ei}' e '{gi}' no grafo ontologico.
+                podendo ser inseridos entre '{ei}' e '{gi}' no grafo ontologico.{excluir_str}
                 Formato obrigatorio (sem explicacoes, sem texto extra):
                 1. <conceito>
                 2. <conceito>
@@ -484,34 +491,45 @@ def Buscar_Relacoes(grafo: Grafo, dominio: list[str],
             descricao = outro
 
     #  PASSO 3: IA sugere intermediarios; humano escolhe (HITL) 
-    sugestoes = Sugerir_Intermediarios_Ia(dominio, ei, gi, descricao)
+    # Ciclo: re-consulta a IA excluindo conceitos ja recusados ate o usuario
+    # escolher um ou a IA esgotar alternativas para o par.
+    rejeitados: list[str] = []
+    leg = None
 
-    if not sugestoes:
-        print("  IA nao gerou intermediarios para esta relacao.")
-        manual = input("  Digite um conceito intermediario manualmente (ou deixe vazio): ").strip()
-        if not manual:
-            return None
-        sugestoes = [manual]
+    while leg is None:
+        sugestoes = Sugerir_Intermediarios_Ia(dominio, ei, gi, descricao,
+                                              excluir=rejeitados)
+        # Garante que nenhum conceito rejeitado escoe pelo filtro da IA
+        sugestoes = [s for s in sugestoes if s not in rejeitados]
 
-    print(f"\n  Conceitos intermediarios sugeridos:")
-    for i, s in enumerate(sugestoes, 1):
-        print(f"    {i}. {s}")
-
-    escolha = None
-    while escolha is None:
-        try:
-            v = int(input("\n  Escolha o numero (0 = nenhum): ").strip())
-            if v == 0:
+        if not sugestoes:
+            print("  IA nao gerou (mais) intermediarios para esta relacao.")
+            manual = input("  Digite um conceito intermediario manualmente (ou deixe vazio): ").strip()
+            if not manual:
                 return None
-            if 1 <= v <= len(sugestoes):
-                escolha = v - 1
-            else:
+            leg = manual
+            break
+
+        print(f"\n  Conceitos intermediarios sugeridos:")
+        for i, s in enumerate(sugestoes, 1):
+            print(f"    {i}. {s}")
+
+        escolha_interna = None
+        while escolha_interna is None:
+            try:
+                v = int(input("\n  Escolha o numero (0 = rejeitar todos e pedir novos): ").strip())
+                if v == 0:
+                    rejeitados.extend(sugestoes)
+                    print(f"  Todos rejeitados. Consultando a IA novamente "
+                          f"(excluindo: {rejeitados})...")
+                    escolha_interna = 0   # sai do while interno para re-consultar
+                elif 1 <= v <= len(sugestoes):
+                    leg = sugestoes[v - 1]
+                    escolha_interna = v
+                else:
+                    print("  Numero invalido.")
+            except ValueError:
                 print("  Numero invalido.")
-        except ValueError:
-            print("  Numero invalido.")
-
-    leg = sugestoes[escolha]
-
     #  PASSO 4: tipos AOF das arestas; humano confirma/corrige 
     tipo_ei_leg = _Confirmar_Tipo(ei,  leg, Sugerir_Tipo_Ia(dominio, ei,  leg))
     tipo_leg_gi = _Confirmar_Tipo(leg, gi,  Sugerir_Tipo_Ia(dominio, leg, gi))

@@ -11,7 +11,7 @@ cliente = Mistral(api_key=minha_chave)
 
 #  Tipos de relação (AOF) — referência para o prompt da IA 
 # Humano digita livremente; a IA usa estes como guia no prompt.
-TIPOS_AOF_REF = "is-a | is-part-of | is-composed-by | is-a-variation-of"
+TIPOS_AOF_REF = "é-um | é-parte-de | é-composto-por | é-uma-variação-de | é-um-atributo-de | é-um-componente-de | é-um-elemento-de | é-composto-por | é-caracterizado-por"
 
 
 class No_Grafo:

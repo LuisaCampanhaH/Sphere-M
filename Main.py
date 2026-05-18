@@ -517,12 +517,17 @@ def Buscar_Relacoes(grafo: Grafo, dominio: list[str],
         escolha_interna = None
         while escolha_interna is None:
             try:
-                v = int(input("\n  Escolha o numero (0 = rejeitar todos e pedir novos): ").strip())
+                v = int(input("\n  Escolha o numero (0 = rejeitar todos e pedir novos / -1 = ir direto para o grafo): ").strip())
                 if v == 0:
                     rejeitados.extend(sugestoes)
                     print(f"  Todos rejeitados. Consultando a IA novamente "
                           f"(excluindo: {rejeitados})...")
                     escolha_interna = 0   # sai do while interno para re-consultar
+                elif v == -1:
+                    ver = input("\nDeseja visualizar o grafo agora? (s/n): ").strip().lower()
+                    if ver == 's':
+                        desenhar_grafo(grafo)
+                        return "PARAR"
                 elif 1 <= v <= len(sugestoes):
                     leg = sugestoes[v - 1]
                     escolha_interna = v
@@ -606,6 +611,10 @@ def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo,
 
             pares_vistos.add((ei, gi))
             resultado = Buscar_Relacoes(grafo, dominio, ei, gi)
+
+            if resultado == "PARAR":
+                print("\n[!] Interrompido pelo usuario.")
+                return
 
             if resultado:
                 print(f"  '{ei}' + '{gi}' -> '{resultado}'")

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Editor de Grafos</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- Fase 1 -->
+  <div class="panel" id="phase1-panel">
+    <h2>Fase 1 — Definir grupos</h2>
+    <div id="phase1-form">
+      <div class="field-group">
+        <label>Teto <span style="color:#bbb;font-weight:400;text-transform:none">(separe por vírgula)</span></label>
+        <input type="text" id="input-teto" placeholder="Ex: diabetes, insulina" />
+      </div>
+      <div class="field-group">
+        <label>Piso <span style="color:#bbb;font-weight:400;text-transform:none">(separe por vírgula)</span></label>
+        <input type="text" id="input-piso" placeholder="Ex: açúcar, glicose" />
+      </div>
+      <div class="field-group">
+        <label>Relacionados <span style="color:#bbb;font-weight:400;text-transform:none">(opcional, separe por vírgula)</span></label>
+        <input type="text" id="input-rel" placeholder="Ex: dieta, exercício" />
+      </div>
+    </div>
+    <div id="form-actions">
+      <button id="start-btn">Gerar grafo →</button>
+      <button id="reset-btn">Limpar tudo</button>
+    </div>
+  </div>
+
+  <!-- Fase 2 -->
+  <div class="panel" id="phase2-panel">
+    <h2>Fase 2 — Preencher conexões</h2>
+    <div id="pair-status">
+      <span id="pair-counter">Par 1 de 6</span>
+      <div id="progress-bar-wrap"><div id="progress-bar" style="width:0%"></div></div>
+    </div>
+    <div id="pair-prompt">
+      <span class="pair-node" id="node-a-label">A</span>
+      <span class="pair-arrow">↔</span>
+      <span class="pair-node" id="node-b-label">B</span>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input type="text" id="input-meio" placeholder="Palavra do meio (Enter para confirmar)" style="flex:1" />
+    </div>
+    <div id="phase2-actions">
+      <button id="confirm-btn">Confirmar</button>
+      <button id="skip-btn">Pular →</button>
+      <button id="reset-btn2" style="margin-left:auto">← Recomeçar</button>
+    </div>
+    <div id="done-msg" style="margin-top:10px;display:none;align-items:center;gap:10px">
+      <span style="color:#0F6E56;font-weight:500">✓ Rodada <span id="round-num">1</span> concluída!</span>
+      <button id="next-round-btn" style="background:#0F6E56;color:#fff;border-color:#0F6E56">Nova rodada →</button>
+      <span id="no-pairs-msg" style="display:none;color:#999;font-size:13px">Nenhum par novo — grafo completo!</span>
+    </div>
+  </div>
+
+  <!-- Grafo -->
+  <div id="canvas-wrap">
+    <canvas id="graph-canvas"></canvas>
+  </div>
+  <div id="hint">💡 Arraste os nós para mover · Clique para selecionar · Delete remove o selecionado</div>
+
+</div>
+<script src="script.js"></script>
+</body>
+</html>

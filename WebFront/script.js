@@ -458,6 +458,67 @@ document.getElementById('input-meio').addEventListener('keydown', e => {
   if (e.key === 'Escape') advancePair();
 });
 
+// ── Função de Poda ────────────────────────────────────────
+// Função Auxiliar para contar quantas arestas um nó possui
+function getGrau(id){
+  return edges.filter(e => e.from === id || e.to === id).length;
+}
+
+// Função Principal da Poda
+function poda(){
+  const removidos = [];
+  let alterou = true;
+
+  while(alterou){
+    alterou = false;
+
+    // Pega apenas os nós que podem ser podados (o teto e o piso são intocáveis)
+    const nosVerificaveis = nodes.filter(
+      n => n.group !== 'teto' && n.group !== 'piso'
+    );
+
+    for(const no of nosVerificaveis){
+      const grau = getGrau(no.id);
+
+      if(grau < 2){
+        removidos.push(no.label);
+
+        edges = edges.filter(
+          e => e.from !== no.id && e.to !== no.id
+        );
+
+        nodes = nodes.filter(n => n.id !== no.id);
+
+        alterou = true;
+
+        break;
+      }
+    }
+  }
+
+  return removidos;
+}
+
+// Função Executa Poda + Mostra o resultado
+function executarPoda(){
+  const removidos = poda();
+
+  startSim(400);
+
+  if(removidos.length == 0){
+    alert('Poda Concluída!\n\nNenhum nó foi removido.\nTodos os elementos já estão conectados ao teto e ao piso');
+
+  } else {
+    const lista = removidos.map(r => ' • ' + r).join('\n');
+    alert(
+      `Poda Concluída!\n\n` +
+      `${removidos.length} nó(s) removido(s) por não terem caminho\n` +
+      `áté o TETO e o PISO ao mesmo tempo:\n\n` +
+      lista
+    );
+  }
+}
+
 // ── Reset ─────────────────────────────────────────────────
 
 function resetAll() {

@@ -619,6 +619,97 @@ document.getElementById('input-meio').addEventListener('keydown', e => {
   if (e.key === 'Escape') advancePair();
 });
 
+// ── Função de Poda ────────────────────────────────────────
+// Função Auxiliar para fazer a Busca no Grafo
+function getReachable(startId){
+  const visited = new Set();
+  const fila = [startId];
+
+  visited.add(startId);
+
+  while(fila.length > 0){
+    const currentId = fila.shift();
+    edges.forEach(e => {
+      let vizinhoId = null;
+
+      if(e.from === currentId){
+        vizinhoId = e.to;
+      } else if(e.to === currentId){
+        vizinhoId = e.from;
+      }
+
+      if(vizinhoId !== null && !visited.has(vizinhoId)){
+        visited.add(vizinhoId);
+        fila.push(vizinhoId);
+      }
+    });
+  }
+
+  return visited;
+}
+
+// Função Principal da Poda
+function poda(){
+  const removidos = [];
+  let alterou = true;
+
+  while(alterou){
+    alterou = false;
+
+    const nosVerificaveis = nodes.filter(
+      n => n.group !== 'teto' && n.group !== 'piso'
+    );
+
+    for(const no of nosVerificaveis){
+      const alcancaveis = getReachable(no.id);
+
+      const temTeto = nodes.some(
+        n => n.group === 'teto' && alcancaveis.has(n.id)
+      );
+
+      const temPiso = nodes.some(
+        n => n.group === 'teto' && alcancaveis.has(n.id)
+      );
+
+      if(!temTeto || !temPiso){
+        removidos.push(no.label);
+
+        edges = edges.filter(
+          e => e.from !== no.id && e.to !== no.id
+        );
+
+        nodes = nodes.filter(n => n.id !== no.id);
+
+        alterou = true;
+
+        break;
+      }
+    }
+  }
+
+  return removidos;
+}
+
+// Função Executa Poda + Mostra o resultado
+function executarPoda(){
+  const removidos = poda();
+
+  startSim(400);
+
+  if(removidos.length == 0){
+    alert('Poda Concluída!\n\nNenhum nó foi removido.\nTodos os elementos já estão conectados ao teto e ao piso');
+
+  } else {
+    const lista = removidos.map(r => ' • ' + r).join('\n');
+    alert(
+      `Poda Concluída!\n\n` +
+      `${removidos.length} nó(s) removido(s) por não terem caminho\n` +
+      `áté o TETO e o PISO ao mesmo tempo:\n\n` +
+      lista
+    );
+  }
+}
+
 // ── Reset ─────────────────────────────────────────────────
 
 function resetAll() {

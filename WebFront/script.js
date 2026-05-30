@@ -459,9 +459,32 @@ document.getElementById('input-meio').addEventListener('keydown', e => {
 });
 
 // ── Função de Poda ────────────────────────────────────────
-// Função Auxiliar para contar quantas arestas um nó possui
-function getGrau(id){
-  return edges.filter(e => e.from === id || e.to === id).length;
+// Função Auxiliar para fazer a Busca no Grafo
+function getReachable(startId){
+  const visited = new Set();
+  const fila = [startId];
+
+  visited.add(startId);
+
+  while(fila.length > 0){
+    const currentId = fila.shift();
+    edges.forEach(e => {
+      let vizinhoId = null;
+
+      if(e.from === currentId){
+        vizinhoId = e.to;
+      } else if(e.to === currentId){
+        vizinhoId = e.from;
+      }
+
+      if(vizinhoId !== null && !visited.has(vizinhoId)){
+        visited.add(vizinhoId);
+        fila.push(vizinhoId);
+      }
+    });
+  }
+
+  return visited;
 }
 
 // Função Principal da Poda
@@ -472,15 +495,22 @@ function poda(){
   while(alterou){
     alterou = false;
 
-    // Pega apenas os nós que podem ser podados (o teto e o piso são intocáveis)
     const nosVerificaveis = nodes.filter(
       n => n.group !== 'teto' && n.group !== 'piso'
     );
 
     for(const no of nosVerificaveis){
-      const grau = getGrau(no.id);
+      const alcancaveis = getReachable(no.id);
 
-      if(grau < 2){
+      const temTeto = nodes.some(
+        n => n.group === 'teto' && alcancaveis.has(n.id)
+      );
+
+      const temPiso = nodes.some(
+        n => n.group === 'teto' && alcancaveis.has(n.id)
+      );
+
+      if(!temTeto || !temPiso){
         removidos.push(no.label);
 
         edges = edges.filter(

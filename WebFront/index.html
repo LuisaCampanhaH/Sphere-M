@@ -3,68 +3,146 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Editor de Grafos</title>
+  <title>Sphere-M</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 <div id="app">
 
-  <!-- Fase 1 -->
-  <div class="panel" id="phase1-panel">
-    <h2>Fase 1 — Definir grupos</h2>
-    <div id="phase1-form">
-      <div class="field-group">
-        <label>Teto <span style="color:#bbb;font-weight:400;text-transform:none">(separe por vírgula)</span></label>
-        <input type="text" id="input-teto" placeholder="Ex: diabetes, insulina" />
-      </div>
-      <div class="field-group">
-        <label>Piso <span style="color:#bbb;font-weight:400;text-transform:none">(separe por vírgula)</span></label>
-        <input type="text" id="input-piso" placeholder="Ex: açúcar, glicose" />
-      </div>
-      <div class="field-group">
-        <label>Relacionados <span style="color:#bbb;font-weight:400;text-transform:none">(opcional, separe por vírgula)</span></label>
-        <input type="text" id="input-rel" placeholder="Ex: dieta, exercício" />
-      </div>
+  <!-- ── Canvas (esquerda) ── -->
+  <div id="canvas-side">
+    <div id="canvas-wrap">
+      <canvas id="graph-canvas"></canvas>
     </div>
-    <div id="form-actions">
-      <button id="start-btn">Gerar grafo →</button>
-      <button id="reset-btn">Limpar tudo</button>
-    </div>
+    <div id="hint">drag to move · click to select · delete removes node</div>
   </div>
 
-  <!-- Fase 2 -->
-  <div class="panel" id="phase2-panel">
-    <h2>Fase 2 — Preencher conexões</h2>
-    <div id="pair-status">
-      <span id="pair-counter">Par 1 de 6</span>
-      <div id="progress-bar-wrap"><div id="progress-bar" style="width:0%"></div></div>
+  <!-- ── Sidebar (direita) ── -->
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <h1>Sphere-M</h1>
+      <p>ontology capture · human-in-the-loop</p>
     </div>
-    <div id="pair-prompt">
-      <span class="pair-node" id="node-a-label">A</span>
-      <span class="pair-arrow">↔</span>
-      <span class="pair-node" id="node-b-label">B</span>
-    </div>
-    <div style="display:flex;gap:8px;margin-bottom:10px">
-      <input type="text" id="input-meio" placeholder="Palavra do meio (Enter para confirmar)" style="flex:1" />
-    </div>
-    <div id="phase2-actions">
-      <button id="confirm-btn">Confirmar</button>
-      <button id="skip-btn">Pular →</button>
-      <button id="poda-btn" onclick="executarPoda()">Executar Poda</button>
-      <button id="reset-btn2" style="margin-left:auto">← Recomeçar</button>
-    </div>
-    <div id="done-msg" style="margin-top:10px;display:none;align-items:center;gap:10px">
-      <span style="color:#0F6E56;font-weight:500">✓ Rodada <span id="round-num">1</span> concluída!</span>
-      <button id="next-round-btn" style="background:#0F6E56;color:#fff;border-color:#0F6E56">Nova rodada →</button>
-      <span id="no-pairs-msg" style="display:none;color:#999;font-size:13px">Nenhum par novo — grafo completo!</span>
-    </div>
-  </div>
 
-  <!-- Grafo -->
-  <div id="canvas-wrap">
-    <canvas id="graph-canvas"></canvas>
-  </div>
-  <div id="hint">💡 Arraste os nós para mover · Clique para selecionar · Delete remove o selecionado</div>
+    <div id="sidebar-body">
+
+      <!-- Fase 1 -->
+      <div id="phase1-panel">
+        <div class="section-label">Definir grupos</div>
+
+        <div class="field-group">
+          <label><span class="label-dot teto"></span>Teto</label>
+          <input type="text" id="input-teto" placeholder="ex: diabetes, insulina" />
+        </div>
+
+        <div class="field-group">
+          <label><span class="label-dot piso"></span>Piso</label>
+          <input type="text" id="input-piso" placeholder="ex: açúcar, glicose" />
+        </div>
+
+        <div class="field-group">
+          <label><span class="label-dot rel"></span>Relacionados <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0;font-size:10px">(opcional)</span></label>
+          <input type="text" id="input-rel" placeholder="ex: dieta, exercício" />
+        </div>
+
+        <div class="actions">
+          <button id="start-btn" class="btn-primary">Gerar grafo →</button>
+          <button id="reset-btn" class="btn-ghost">Limpar tudo</button>
+        </div>
+      </div>
+
+      <!-- Fase 2 -->
+      <div id="phase2-panel">
+        <div id="phase2-header">
+          <div class="section-label" style="margin-bottom:0">Conexões</div>
+          <button id="stop-btn">⏹ encerrar</button>
+        </div>
+
+        <div id="pair-status">
+          <span id="pair-counter">—</span>
+          <div id="progress-bar-wrap"><div id="progress-bar" style="width:0%"></div></div>
+        </div>
+
+        <div id="already-connected-msg">
+          <span class="badge-connected">✓ conectados</span>
+          <span id="already-connected-path"></span>
+        </div>
+
+        <div id="pair-prompt">
+          <span class="pair-node" id="node-a-label">A</span>
+          <span class="pair-arrow">↔</span>
+          <span class="pair-node" id="node-b-label">B</span>
+        </div>
+
+        <input type="text" id="input-meio" placeholder="palavra do meio (Enter)" style="margin-bottom:10px" />
+
+        <div id="phase2-actions">
+          <button id="confirm-btn" class="btn-primary">Confirmar</button>
+          <button id="skip-btn" class="btn-ghost">Pular →</button>
+          <button id="poda-btn" class="btn-success" onclick="executarPoda()">Executar Poda</button>
+          <button id="reset-btn2" class="btn-ghost" style="margin-top:4px">← Recomeçar</button>
+        </div>
+
+        <!-- Rodada concluída -->
+        <div id="done-msg">
+          <span>✓ Rodada <span id="round-num">1</span> concluída</span>
+          <button id="next-round-btn" class="btn-success">Nova rodada →</button>
+        </div>
+
+        <!-- Grafo completo -->
+        <div id="complete-msg">
+          <div id="complete-banner">
+            <span id="complete-icon">🕸️</span>
+            <div>
+              <div id="complete-title">Grafo completo</div>
+              <div id="complete-sub">Todos os nós estão ancorados em teto e piso.</div>
+            </div>
+          </div>
+          <div id="complete-actions">
+            <button id="continue-btn">Aprofundar grafo →</button>
+            <button id="finish-btn">Encerrar</button>
+          </div>
+        </div>
+
+        <!-- Encerrado -->
+        <div id="finished-msg">
+          <span class="badge-finished">ENCERRADO</span>
+          <span>grafo pronto para visualização</span>
+        </div>
+      </div>
+
+    </div><!-- /sidebar-body -->
+
+    <!-- Legenda -->
+    <div id="legend">
+      <div class="legend-item">
+        <svg class="legend-shape" viewBox="0 0 14 14">
+          <polygon points="7,1 13,13 1,13" fill="#3d1f0e" stroke="#ff6b35" stroke-width="1.2"/>
+        </svg>teto
+      </div>
+      <div class="legend-item">
+        <svg class="legend-shape" viewBox="0 0 14 14">
+          <polygon points="7,13 13,1 1,1" fill="#0e1e3d" stroke="#3b82f6" stroke-width="1.2"/>
+        </svg>piso
+      </div>
+      <div class="legend-item">
+        <svg class="legend-shape" viewBox="0 0 14 14">
+          <polygon points="7,1 13,4.5 13,9.5 7,13 1,9.5 1,4.5" fill="#0a2e18" stroke="#22c55e" stroke-width="1.2"/>
+        </svg>relacionado 1
+      </div>
+      <div class="legend-item">
+        <svg class="legend-shape" viewBox="0 0 14 14">
+          <polygon points="7,1 13,7 7,13 1,7" fill="#220a3d" stroke="#a855f7" stroke-width="1.2"/>
+        </svg>relacionado 2+
+      </div>
+      <div class="legend-item">
+        <svg class="legend-shape" viewBox="0 0 14 14">
+          <circle cx="7" cy="7" r="6" fill="#220a3d" stroke="#a855f7" stroke-width="1.2"/>
+        </svg>meio
+      </div>
+    </div>
+
+  </div><!-- /sidebar -->
 
 </div>
 <script src="script.js"></script>

@@ -433,6 +433,13 @@ button:hover { background: var(--border); color: var(--text); }
   font-family: 'DM Mono', monospace;
 }
 
+.btn-success {
+  background: #278d5d !important;
+  color: #ffffff !important;
+  border-color: #278d5d !important;
+  box-shadow: 0 2px 8px rgba(15, 255, 83, 0.25);
+}
+
 /* ── Legend ─────────────────────────────────── */
 #legend {
   padding: 12px 22px;

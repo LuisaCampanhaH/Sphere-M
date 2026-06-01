@@ -1,9 +1,12 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Sphere-M</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@300;400;500&family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -13,40 +16,62 @@
   <div id="canvas-side">
     <div id="canvas-wrap">
       <canvas id="graph-canvas"></canvas>
+      <div id="canvas-overlay-hint">drag · click · delete</div>
     </div>
-    <div id="hint">drag to move · click to select · delete removes node</div>
   </div>
 
   <!-- ── Sidebar (direita) ── -->
   <div id="sidebar">
+
+    <!-- Header -->
     <div id="sidebar-header">
-      <h1>Sphere-M</h1>
-      <p>ontology capture · human-in-the-loop</p>
+      <div id="header-top">
+        <div id="logo-block">
+          <span id="logo-title">Sphere<em>-M</em></span>
+          <span id="logo-sub">ontology capture</span>
+        </div>
+        <button id="theme-toggle" title="Alternar tema" aria-label="Alternar tema claro/escuro">
+          <span id="theme-icon">☽</span>
+        </button>
+      </div>
     </div>
 
     <div id="sidebar-body">
 
       <!-- Fase 1 -->
       <div id="phase1-panel">
-        <div class="section-label">Definir grupos</div>
+        <div class="section-label">
+          <span class="section-label-num">01</span>
+          Definir grupos
+        </div>
 
         <div class="field-group">
-          <label><span class="label-dot teto"></span>Teto</label>
+          <label>
+            <span class="label-chip teto">teto</span>
+          </label>
           <input type="text" id="input-teto" placeholder="ex: diabetes, insulina" />
         </div>
 
         <div class="field-group">
-          <label><span class="label-dot piso"></span>Piso</label>
+          <label>
+            <span class="label-chip piso">piso</span>
+          </label>
           <input type="text" id="input-piso" placeholder="ex: açúcar, glicose" />
         </div>
 
         <div class="field-group">
-          <label><span class="label-dot rel"></span>Relacionados <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0;font-size:10px">(opcional)</span></label>
+          <label>
+            <span class="label-chip rel">relacionados</span>
+            <span class="label-optional">opcional</span>
+          </label>
           <input type="text" id="input-rel" placeholder="ex: dieta, exercício" />
         </div>
 
         <div class="actions">
-          <button id="start-btn" class="btn-primary">Gerar grafo →</button>
+          <button id="start-btn" class="btn-primary">
+            <span>Gerar grafo</span>
+            <span class="btn-icon">→</span>
+          </button>
           <button id="reset-btn" class="btn-ghost">Limpar tudo</button>
         </div>
       </div>
@@ -54,41 +79,50 @@
       <!-- Fase 2 -->
       <div id="phase2-panel">
         <div id="phase2-header">
-          <div class="section-label" style="margin-bottom:0">Conexões</div>
-          <button id="stop-btn">⏹ encerrar</button>
+          <div class="section-label" style="margin-bottom:0">
+            <span class="section-label-num">02</span>
+            Conexões
+          </div>
+          <button id="stop-btn" class="btn-stop">⏹ encerrar</button>
         </div>
 
+        <!-- Progress -->
         <div id="pair-status">
           <span id="pair-counter">—</span>
-          <div id="progress-bar-wrap"><div id="progress-bar" style="width:0%"></div></div>
+          <div id="progress-bar-wrap">
+            <div id="progress-bar" style="width:0%"></div>
+          </div>
         </div>
 
+        <!-- Already connected -->
         <div id="already-connected-msg">
           <span class="badge-connected">✓ conectados</span>
           <span id="already-connected-path"></span>
         </div>
 
+        <!-- Pair prompt -->
         <div id="pair-prompt">
           <span class="pair-node" id="node-a-label">A</span>
           <span class="pair-arrow">↔</span>
           <span class="pair-node" id="node-b-label">B</span>
         </div>
 
-        <input type="text" id="input-meio" placeholder="palavra do meio (Enter)" style="margin-bottom:12px" />
+        <input type="text" id="input-meio" placeholder="palavra do meio (Enter)" />
 
         <div id="phase2-actions">
-          <!-- Primary row: Confirmar + Pular side by side -->
           <div class="btn-row">
-            <button id="confirm-btn" class="btn-primary btn-row-main">Confirmar</button>
+            <button id="confirm-btn" class="btn-primary btn-row-main">
+              <span>Confirmar</span>
+            </button>
             <button id="skip-btn" class="btn-ghost btn-row-skip">Pular →</button>
           </div>
-          <!-- Secondary: Recomeçar alone -->
-          <button id="reset-btn2" class="btn-ghost btn-restart">← Recomeçar</button>
+          <button id="reset-btn2" class="btn-restart btn-ghost">← Recomeçar</button>
         </div>
 
         <!-- Rodada concluída -->
         <div id="done-msg">
-          <span>✓ Rodada <span id="round-num">1</span> concluída</span>
+          <div class="done-icon">✓</div>
+          <div class="done-text">Rodada <span id="round-num">1</span> concluída</div>
           <button id="next-round-btn" class="btn-success">Nova rodada →</button>
         </div>
 
@@ -109,39 +143,31 @@
 
         <!-- Encerrado -->
         <div id="finished-msg">
-          <span class="badge-finished">ENCERRADO</span>
-          <span>grafo pronto para visualização</span>
+          <div class="finished-inner">
+            <span class="badge-finished">ENCERRADO</span>
+            <span class="finished-text">grafo pronto para visualização</span>
+          </div>
         </div>
       </div>
 
     </div><!-- /sidebar-body -->
 
-    <!-- Legenda -->
+    <!-- Legend -->
     <div id="legend">
-      <div class="legend-item">
-        <svg class="legend-shape" viewBox="0 0 14 14">
-          <polygon points="7,1 13,13 1,13" fill="#3d1f0e" stroke="#ff6b35" stroke-width="1.2"/>
-        </svg>teto
-      </div>
-      <div class="legend-item">
-        <svg class="legend-shape" viewBox="0 0 14 14">
-          <polygon points="7,13 13,1 1,1" fill="#0e1e3d" stroke="#3b82f6" stroke-width="1.2"/>
-        </svg>piso
-      </div>
-      <div class="legend-item">
-        <svg class="legend-shape" viewBox="0 0 14 14">
-          <polygon points="7,1 13,4.5 13,9.5 7,13 1,9.5 1,4.5" fill="#0a2e18" stroke="#22c55e" stroke-width="1.2"/>
-        </svg>relacionado 1
-      </div>
-      <div class="legend-item">
-        <svg class="legend-shape" viewBox="0 0 14 14">
-          <polygon points="7,1 13,7 7,13 1,7" fill="#220a3d" stroke="#a855f7" stroke-width="1.2"/>
-        </svg>relacionado 2+
-      </div>
-      <div class="legend-item">
-        <svg class="legend-shape" viewBox="0 0 14 14">
-          <circle cx="7" cy="7" r="6" fill="#220a3d" stroke="#a855f7" stroke-width="1.2"/>
-        </svg>meio
+      <div class="legend-title">legenda</div>
+      <div class="legend-grid">
+        <div class="legend-item">
+          <span class="legend-dot" style="background:var(--teto);"></span>teto
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot" style="background:var(--piso);"></span>piso
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot" style="background:var(--rel);"></span>relacionado
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot" style="background:var(--meio);"></span>meio
+        </div>
       </div>
     </div>
 

@@ -1,3 +1,31 @@
+// ── Theme toggle ──────────────────────────────
+const html = document.documentElement;
+const themeBtn  = document.getElementById('theme-toggle');
+const themeIcon = document.getElementById('theme-icon');
+
+// detect system preference on first load
+if (!localStorage.getItem('sphere-theme')) {
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  html.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+} else {
+  html.setAttribute('data-theme', localStorage.getItem('sphere-theme'));
+}
+
+function applyThemeIcon() {
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  themeIcon.textContent = isDark ? '☀' : '☽';
+}
+applyThemeIcon();
+
+themeBtn.addEventListener('click', () => {
+  const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('sphere-theme', next);
+  applyThemeIcon();
+  draw(); // redraw canvas with new colors
+});
+
+// ── Canvas setup ─────────────────────────────
 const canvas = document.getElementById('graph-canvas');
 const ctx = canvas.getContext('2d');
 let W = canvas.parentElement.clientWidth || 800;
@@ -5,7 +33,6 @@ let H = canvas.parentElement.clientHeight || 600;
 canvas.width = W;
 canvas.height = H;
 
-// resize handler
 window.addEventListener('resize', () => {
   W = canvas.parentElement.clientWidth;
   H = canvas.parentElement.clientHeight;
@@ -17,7 +44,7 @@ window.addEventListener('resize', () => {
 let nodes = [], edges = [], selected = null, dragging = null;
 let dragOff = { x: 0, y: 0 }, nextId = 0, animFrame = null;
 
-// ── Conjuntos do algoritmo ────────────────────────────────
+// ── Conjuntos do algoritmo ────────────────────
 let E = new Set();
 let G = new Set();
 let tempG = new Set();
@@ -27,14 +54,35 @@ let pairIdx = 0;
 let round = 1;
 let finished = false;
 
-const GROUP_COLORS = {
-  teto:        { fill: '#fdeee8', stroke: '#d4450c', text: '#7a2506' },
-  piso:        { fill: '#e8effe', stroke: '#1d5bbf', text: '#0e3275' },
-  relacionado: { fill: '#e8f7ee', stroke: '#1a7a3f', text: '#0d4422' },
-  meio:        { fill: '#f3eafd', stroke: '#7c22d4', text: '#4a0e87' },
-};
+// ── Node colors: reads CSS vars per-draw so they respect the current theme ──
+function getGroupColors() {
+  const s = getComputedStyle(html);
+  const get = v => s.getPropertyValue(v).trim();
+  return {
+    teto: {
+      fill:   get('--teto-soft'),
+      stroke: get('--teto'),
+      text:   get('--teto'),
+    },
+    piso: {
+      fill:   get('--piso-soft'),
+      stroke: get('--piso'),
+      text:   get('--piso'),
+    },
+    relacionado: {
+      fill:   get('--rel-soft'),
+      stroke: get('--rel'),
+      text:   get('--rel'),
+    },
+    meio: {
+      fill:   get('--meio-soft'),
+      stroke: get('--meio'),
+      text:   get('--meio'),
+    },
+  };
+}
 
-// ── Nós ──────────────────────────────────────────────────
+// ── Nós ──────────────────────────────────────
 
 function findNode(label) {
   return nodes.find(n => n.label.toLowerCase() === label.toLowerCase().trim());
@@ -71,7 +119,7 @@ function edgeExists(idA, idB) {
     (e.from === idA && e.to === idB) || (e.from === idB && e.to === idA));
 }
 
-// ── Propagação de marcas ─────────────────────────────────
+// ── Propagação de marcas ──────────────────────
 
 function propagateMarks() {
   const cQueue   = nodes.filter(nd => nd.linkedToCeiling).map(nd => nd.id);
@@ -105,9 +153,7 @@ function propagateMarks() {
   }
 }
 
-// ── Poda: remove qualquer nó sem C+F simultâneo, exceto teto e piso ──
-// Roda em loop até estabilizar, pois remover um nó pode desancorar vizinhos.
-// Chamada automaticamente pelo botão "encerrar".
+// ── Poda ─────────────────────────────────────
 function executePoda() {
   let changed = true;
   while (changed) {
@@ -122,7 +168,6 @@ function executePoda() {
     if (!toRemove.length) { changed = false; break; }
     edges = edges.filter(e => !toRemove.includes(e.from) && !toRemove.includes(e.to));
     nodes = nodes.filter(nd => !toRemove.includes(nd.id));
-    // resetar marcas para re-propagar do zero na próxima iteração
     nodes.forEach(nd => {
       if (nd.group !== 'teto') nd.linkedToCeiling = false;
       if (nd.group !== 'piso') nd.linkedToFloor   = false;
@@ -134,7 +179,7 @@ function isGraphComplete() {
   return nodes.every(nd => nd.linkedToCeiling && nd.linkedToFloor);
 }
 
-// ── Conjuntos: geração de pares GE ────────────────────────
+// ── Pares GE ─────────────────────────────────
 function buildGE() {
   const result = [];
   for (const gi of G) {
@@ -155,7 +200,7 @@ function buildGEforContinue() {
   return buildGE();
 }
 
-// ── Simulação de forças ───────────────────────────────────
+// ── Simulação de forças ───────────────────────
 const REPULSION = 10000, SPRING_LEN = 160, SPRING_K = 0.05, DAMPING = 0.82, CENTER_K = 0.008;
 let simSteps = 0;
 
@@ -214,30 +259,39 @@ function startSim(steps = 300) {
   animFrame = requestAnimationFrame(loop);
 }
 
-// ── Desenhar ─────────────────────────────────────────────
-
+// ── Draw ──────────────────────────────────────
 function draw() {
   ctx.clearRect(0, 0, W, H);
+  const style = getComputedStyle(html);
+  const dotColor  = style.getPropertyValue('--canvas-dot').trim();
+  const edgeColor = style.getPropertyValue('--edge-color').trim();
+  const textMuted = style.getPropertyValue('--text-muted').trim();
+  const surfaceColor = style.getPropertyValue('--surface').trim();
+  const GROUP_COLORS = getGroupColors();
 
-  ctx.fillStyle = 'rgba(0,0,0,0.06)';
-  for (let x = 30; x < W; x += 30)
-    for (let y = 30; y < H; y += 30) {
-      ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
+  // dot grid
+  ctx.fillStyle = dotColor;
+  for (let x = 24; x < W; x += 24)
+    for (let y = 24; y < H; y += 24) {
+      ctx.beginPath(); ctx.arc(x, y, 0.8, 0, Math.PI * 2); ctx.fill();
     }
 
-  ctx.font = '500 12px sans-serif';
+  // measure text widths
+  ctx.font = '500 12px Geist, sans-serif';
   nodes.forEach(nd => {
     const textW = ctx.measureText(nd.label).width;
-    nd.w = Math.max(textW + 30, 60);
-    nd.h = 42;
+    nd.w = Math.max(textW + 32, 64);
+    nd.h = 40;
   });
 
+  // edges
   edges.forEach(e => {
     const a = nodes.find(n => n.id === e.from), b = nodes.find(n => n.id === e.to);
     if (!a || !b) return;
     ctx.save();
-    ctx.strokeStyle = 'rgba(0,0,0,0.14)';
+    ctx.strokeStyle = edgeColor;
     ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
@@ -245,12 +299,13 @@ function draw() {
     ctx.restore();
   });
 
+  // nodes
   nodes.forEach(nd => {
     const c = GROUP_COLORS[nd.group] || GROUP_COLORS.meio;
     const isSel = selected && selected.id === nd.id;
 
     function buildPath() {
-      const r = 6;
+      const r = 8;
       const x = nd.x - nd.w / 2;
       const y = nd.y - nd.h / 2;
       ctx.beginPath();
@@ -270,15 +325,16 @@ function draw() {
       ctx.closePath();
     }
 
+    // pulse glow for highlighted nodes
     if (nd.highlight) {
       const pulse = Math.sin(nd.pulse || 0);
       ctx.save();
       ctx.strokeStyle = c.stroke;
-      ctx.globalAlpha = 0.22 + 0.13 * pulse;
-      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.18 + 0.10 * pulse;
+      ctx.lineWidth = 8 + 4 * pulse;
       ctx.save();
       ctx.translate(nd.x, nd.y);
-      ctx.scale(1 + 0.12 + 0.06 * pulse, 1 + 0.12 + 0.06 * pulse);
+      ctx.scale(1.08 + 0.04 * pulse, 1.08 + 0.04 * pulse);
       ctx.translate(-nd.x, -nd.y);
       buildPath();
       ctx.restore();
@@ -286,45 +342,54 @@ function draw() {
       ctx.restore();
     }
 
+    // node body
     ctx.save();
-    if (isSel) { ctx.shadowColor = c.stroke; ctx.shadowBlur = 14; }
+    if (isSel) {
+      ctx.shadowColor = c.stroke;
+      ctx.shadowBlur = 16;
+    }
     buildPath();
     ctx.fillStyle = c.fill;
     ctx.fill();
     ctx.strokeStyle = c.stroke;
-    ctx.lineWidth = (isSel || nd.highlight) ? 2.5 : 1.2;
+    ctx.lineWidth = isSel ? 2.5 : 1.5;
+    ctx.globalAlpha = isSel ? 1 : 0.9;
     ctx.stroke();
     ctx.restore();
 
+    // C/F marks
     if (nd.linkedToCeiling || nd.linkedToFloor) {
       ctx.save();
-      ctx.font = 'bold 9px DM Mono, monospace';
+      ctx.font = 'bold 8px Geist Mono, monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const marks = [];
-      if (nd.linkedToCeiling) marks.push({ label: 'C', color: '#d4450c' });
-      if (nd.linkedToFloor)   marks.push({ label: 'F', color: '#1d5bbf' });
+      const s2 = getComputedStyle(html);
+      if (nd.linkedToCeiling) marks.push({ label: 'C', color: s2.getPropertyValue('--teto').trim() });
+      if (nd.linkedToFloor)   marks.push({ label: 'F', color: s2.getPropertyValue('--piso').trim() });
       marks.forEach((m, i) => {
-        const ox = (marks.length === 2 ? (i === 0 ? -6 : 6) : 0);
+        const ox = marks.length === 2 ? (i === 0 ? -7 : 7) : 0;
         ctx.fillStyle = m.color;
-        ctx.fillText(m.label, nd.x + ox, nd.y + 11);
+        ctx.fillText(m.label, nd.x + ox, nd.y + 10);
       });
       ctx.restore();
     }
 
+    // label
     ctx.save();
-    ctx.font = '500 12px sans-serif';
+    ctx.font = '500 12px Geist, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = c.text;
-    ctx.fillText(nd.label, nd.x, nd.y - 4);
+    ctx.fillText(nd.label, nd.x, nd.y - (nd.linkedToCeiling || nd.linkedToFloor ? 4 : 0));
     ctx.restore();
   });
 
+  // empty state
   if (!nodes.length) {
     ctx.save();
-    ctx.font = '14px sans-serif';
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.font = '400 13px Geist, sans-serif';
+    ctx.fillStyle = textMuted;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('Preencha os grupos acima para começar', W / 2, H / 2);
@@ -332,7 +397,7 @@ function draw() {
   }
 }
 
-// ── Fase 1 ────────────────────────────────────────────────
+// ── Fase 1 ───────────────────────────────────
 
 function parseList(str) {
   return str.split(',').map(s => s.trim()).filter(Boolean);
@@ -358,8 +423,9 @@ document.getElementById('start-btn').addEventListener('click', () => {
     ['input-teto', 'input-piso'].forEach(id => {
       const el = document.getElementById(id);
       if (!parseList(el.value).length) {
-        el.style.borderColor = '#E24B4A';
-        setTimeout(() => el.style.borderColor = '', 1200);
+        el.style.borderColor = 'var(--teto)';
+        el.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--teto) 15%, transparent)';
+        setTimeout(() => { el.style.borderColor = ''; el.style.boxShadow = ''; }, 1200);
       }
     });
     return;
@@ -372,14 +438,12 @@ document.getElementById('start-btn').addEventListener('click', () => {
 
   tetos.forEach(l => {
     const n = createNode(l, 'teto');
-    n.fixed = true;
-    n.linkedToCeiling = true;
+    n.fixed = true; n.linkedToCeiling = true;
     E.add(l); G.add(l);
   });
   pisos.forEach(l => {
     const n = createNode(l, 'piso');
-    n.fixed = true;
-    n.linkedToFloor = true;
+    n.fixed = true; n.linkedToFloor = true;
     E.add(l); G.add(l);
   });
   rels.forEach((l, i) => {
@@ -398,7 +462,7 @@ document.getElementById('start-btn').addEventListener('click', () => {
   startSim(400);
 });
 
-// ── Fase 2 ────────────────────────────────────────────────
+// ── Fase 2 ───────────────────────────────────
 
 function pathToString(startId, endId) {
   if (startId === endId) return nodes.find(n => n.id === startId)?.label ?? '';
@@ -425,7 +489,6 @@ function updatePairUI() {
 
   if (pairIdx >= GE.length) {
     propagateMarks();
-
     G = new Set(tempG);
     tempG = new Set();
 
@@ -509,8 +572,8 @@ function confirmPair() {
   if (!nA || !nB) { advancePair(); return; }
 
   let gi = nA, ei = nB;
-  if      (nA.linkedToCeiling && nB.linkedToFloor)  { gi = nA; ei = nB; }
-  else if (nB.linkedToCeiling && nA.linkedToFloor)  { gi = nB; ei = nA; }
+  if      (nA.linkedToCeiling && nB.linkedToFloor)    { gi = nA; ei = nB; }
+  else if (nB.linkedToCeiling && nA.linkedToFloor)    { gi = nB; ei = nA; }
   else if (nB.linkedToCeiling && !nA.linkedToCeiling) { gi = nB; ei = nA; }
   else if (nA.linkedToFloor   && !nB.linkedToFloor)   { gi = nB; ei = nA; }
 
@@ -528,7 +591,6 @@ function confirmPair() {
 
   getOrCreateEdge(ei.id, nm.id);
   getOrCreateEdge(nm.id, gi.id);
-
   advancePair();
 }
 
@@ -570,9 +632,8 @@ function continueLoop() {
   startSim(300);
 }
 
-// ── Encerrar: executa poda automaticamente antes de finalizar ──
 function finishLoop() {
-  executePoda();   // ← poda integrada aqui
+  executePoda();
   finished = true;
   nodes.forEach(n => { n.highlight = false; n.pulse = 0; });
   document.getElementById('pair-prompt').style.opacity = '0.4';
@@ -583,12 +644,11 @@ function finishLoop() {
   document.getElementById('done-msg').style.display = 'none';
   document.getElementById('complete-msg').style.display = 'none';
   document.getElementById('already-connected-msg').style.display = 'none';
-  document.getElementById('finished-msg').style.display = 'flex';
+  document.getElementById('finished-msg').style.display = 'block';
   startSim(60);
 }
 
-// ── Botões ────────────────────────────────────────────────
-
+// ── Botões ────────────────────────────────────
 document.getElementById('confirm-btn').addEventListener('click', confirmPair);
 document.getElementById('skip-btn').addEventListener('click', advancePair);
 document.getElementById('stop-btn').addEventListener('click', finishLoop);
@@ -600,8 +660,7 @@ document.getElementById('input-meio').addEventListener('keydown', e => {
   if (e.key === 'Escape') advancePair();
 });
 
-// ── Reset ─────────────────────────────────────────────────
-
+// ── Reset ─────────────────────────────────────
 function resetAll() {
   nodes = []; edges = []; selected = null; nextId = 0;
   E = new Set(); G = new Set(); tempG = new Set();
@@ -621,12 +680,11 @@ function resetAll() {
 document.getElementById('reset-btn').addEventListener('click', resetAll);
 document.getElementById('reset-btn2').addEventListener('click', resetAll);
 
-// ── Mouse ─────────────────────────────────────────────────
-
+// ── Mouse ─────────────────────────────────────
 function nodeAt(x, y) {
   return nodes.slice().reverse().find(nd => {
-    const hw = (nd.w || 60) / 2;
-    const hh = (nd.h || 42) / 2;
+    const hw = (nd.w || 64) / 2;
+    const hh = (nd.h || 40) / 2;
     return Math.abs(x - nd.x) <= hw && Math.abs(y - nd.y) <= hh;
   });
 }

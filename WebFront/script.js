@@ -18,10 +18,10 @@ let nodes = [], edges = [], selected = null, dragging = null;
 let dragOff = { x: 0, y: 0 }, nextId = 0, animFrame = null;
 
 // ── Conjuntos do algoritmo ────────────────────────────────
-let E = new Set();       // todos os elementos conhecidos (labels)
-let G = new Set();       // nós novos da iteração atual
-let tempG = new Set();   // nós criados nesta rodada
-let GE = [];             // pares (gi, ei) a percorrer
+let E = new Set();
+let G = new Set();
+let tempG = new Set();
+let GE = [];
 let seenPairs = new Set();
 let pairIdx = 0;
 let round = 1;
@@ -47,6 +47,7 @@ function createNode(label, group, x, y) {
     x: x !== undefined ? x : W / 2 + (Math.random() - 0.5) * 100,
     y: y !== undefined ? y : H / 2 + (Math.random() - 0.5) * 100,
     vx: 0, vy: 0,
+    w: 60, h: 42,
     highlight: false, pulse: 0,
     linkedToCeiling: false,
     linkedToFloor: false,
@@ -56,8 +57,7 @@ function createNode(label, group, x, y) {
 }
 
 function getOrCreateEdge(idA, idB) {
-  const exists = edges.find(e =>
-    (e.from === idA && e.to === idB) || (e.from === idB && e.to === idA));
+  const exists = edges.find(e => e.from === idA && e.to === idB);
   if (!exists) edges.push({ from: idA, to: idB });
 }
 
@@ -71,20 +71,14 @@ function edgeExists(idA, idB) {
     (e.from === idA && e.to === idB) || (e.from === idB && e.to === idA));
 }
 
-// ── Propagação de marcas (BFS) ────────────────────────────
-// Propaga linkedToCeiling e linkedToFloor pelo grafo inteiro
-// a partir dos nós que já têm a marca. Chamado após cada
-// inserção de aresta.
+// ── Propagação de marcas ─────────────────────────────────
 
 function propagateMarks() {
-  // BFS a partir de todos os nós já marcados como ceiling
-  const cQueue = nodes.filter(n => n.linkedToCeiling).map(n => n.id);
+  const cQueue   = nodes.filter(nd => nd.linkedToCeiling).map(nd => nd.id);
   const cVisited = new Set(cQueue);
   while (cQueue.length) {
     const cur = cQueue.shift();
-    const neighbors = edges
-      .filter(e => e.from === cur || e.to === cur)
-      .map(e => e.from === cur ? e.to : e.from);
+    const neighbors = edges.filter(e => e.to === cur).map(e => e.from);
     for (const nb of neighbors) {
       if (!cVisited.has(nb)) {
         cVisited.add(nb);
@@ -95,14 +89,11 @@ function propagateMarks() {
     }
   }
 
-  // BFS a partir de todos os nós já marcados como floor
-  const fQueue = nodes.filter(n => n.linkedToFloor).map(n => n.id);
+  const fQueue   = nodes.filter(nd => nd.linkedToFloor).map(nd => nd.id);
   const fVisited = new Set(fQueue);
   while (fQueue.length) {
     const cur = fQueue.shift();
-    const neighbors = edges
-      .filter(e => e.from === cur || e.to === cur)
-      .map(e => e.from === cur ? e.to : e.from);
+    const neighbors = edges.filter(e => e.from === cur).map(e => e.to);
     for (const nb of neighbors) {
       if (!fVisited.has(nb)) {
         fVisited.add(nb);
@@ -114,13 +105,36 @@ function propagateMarks() {
   }
 }
 
-// Verifica se todos os elementos de E têm as duas marcas
+// ── Poda: remove qualquer nó sem C+F simultâneo, exceto teto e piso ──
+// Roda em loop até estabilizar, pois remover um nó pode desancorar vizinhos.
+// Chamada automaticamente pelo botão "encerrar".
+function executePoda() {
+  let changed = true;
+  while (changed) {
+    propagateMarks();
+    const toRemove = nodes
+      .filter(nd =>
+        nd.group !== 'teto' &&
+        nd.group !== 'piso' &&
+        !(nd.linkedToCeiling && nd.linkedToFloor)
+      )
+      .map(nd => nd.id);
+    if (!toRemove.length) { changed = false; break; }
+    edges = edges.filter(e => !toRemove.includes(e.from) && !toRemove.includes(e.to));
+    nodes = nodes.filter(nd => !toRemove.includes(nd.id));
+    // resetar marcas para re-propagar do zero na próxima iteração
+    nodes.forEach(nd => {
+      if (nd.group !== 'teto') nd.linkedToCeiling = false;
+      if (nd.group !== 'piso') nd.linkedToFloor   = false;
+    });
+  }
+}
+
 function isGraphComplete() {
   return nodes.every(nd => nd.linkedToCeiling && nd.linkedToFloor);
 }
 
 // ── Conjuntos: geração de pares GE ────────────────────────
-// GE = { (gi, ei) | gi ∈ G, ei ∈ E, gi ≠ ei, par não visto }
 function buildGE() {
   const result = [];
   for (const gi of G) {
@@ -135,7 +149,6 @@ function buildGE() {
   return result;
 }
 
-// Para o "continuar": reseta seenPairs e trata todos como novos
 function buildGEforContinue() {
   seenPairs = new Set();
   G = new Set(E);
@@ -143,8 +156,7 @@ function buildGEforContinue() {
 }
 
 // ── Simulação de forças ───────────────────────────────────
-
-const REPULSION = 8000, SPRING_LEN = 130, SPRING_K = 0.05, DAMPING = 0.82, CENTER_K = 0.008;
+const REPULSION = 10000, SPRING_LEN = 160, SPRING_K = 0.05, DAMPING = 0.82, CENTER_K = 0.008;
 let simSteps = 0;
 
 function simulateStep() {
@@ -207,78 +219,57 @@ function startSim(steps = 300) {
 function draw() {
   ctx.clearRect(0, 0, W, H);
 
-  // grid
   ctx.fillStyle = 'rgba(0,0,0,0.06)';
   for (let x = 30; x < W; x += 30)
     for (let y = 30; y < H; y += 30) {
       ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
     }
 
-  // arestas
+  ctx.font = '500 12px sans-serif';
+  nodes.forEach(nd => {
+    const textW = ctx.measureText(nd.label).width;
+    nd.w = Math.max(textW + 30, 60);
+    nd.h = 42;
+  });
+
   edges.forEach(e => {
     const a = nodes.find(n => n.id === e.from), b = nodes.find(n => n.id === e.to);
     if (!a || !b) return;
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < 1) return;
-    const ux = dx / dist, uy = dy / dist, r = 28;
     ctx.save();
     ctx.strokeStyle = 'rgba(0,0,0,0.14)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(a.x + ux * r, a.y + uy * r);
-    ctx.lineTo(b.x - ux * r, b.y - uy * r);
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
     ctx.stroke();
     ctx.restore();
   });
 
-  // (sem linha tracejada — par destacado pelos pulsos nos nós)
-
-  // nós
   nodes.forEach(nd => {
     const c = GROUP_COLORS[nd.group] || GROUP_COLORS.meio;
     const isSel = selected && selected.id === nd.id;
-    const r = 28;
-
-    let shape = 'circle';
-    if (nd.group === 'teto') shape = 'tri-up';
-    else if (nd.group === 'piso') shape = 'tri-down';
-    else if (nd.group === 'relacionado') shape = nd.relIdx === 0 ? 'hexagon' : 'diamond';
 
     function buildPath() {
+      const r = 6;
+      const x = nd.x - nd.w / 2;
+      const y = nd.y - nd.h / 2;
       ctx.beginPath();
-      if (shape === 'circle') {
-        ctx.arc(nd.x, nd.y, r, 0, Math.PI * 2);
-      } else if (shape === 'tri-up') {
-        const h = r * 1.8;
-        ctx.moveTo(nd.x,           nd.y - h * 0.62);
-        ctx.lineTo(nd.x + r * 1.1, nd.y + h * 0.38);
-        ctx.lineTo(nd.x - r * 1.1, nd.y + h * 0.38);
-        ctx.closePath();
-      } else if (shape === 'tri-down') {
-        const h = r * 1.8;
-        ctx.moveTo(nd.x,           nd.y + h * 0.62);
-        ctx.lineTo(nd.x + r * 1.1, nd.y - h * 0.38);
-        ctx.lineTo(nd.x - r * 1.1, nd.y - h * 0.38);
-        ctx.closePath();
-      } else if (shape === 'diamond') {
-        ctx.moveTo(nd.x,           nd.y - r * 1.3);
-        ctx.lineTo(nd.x + r * 1.1, nd.y);
-        ctx.lineTo(nd.x,           nd.y + r * 1.3);
-        ctx.lineTo(nd.x - r * 1.1, nd.y);
-        ctx.closePath();
-      } else if (shape === 'hexagon') {
-        for (let i = 0; i < 6; i++) {
-          const ang = Math.PI / 180 * (60 * i - 30);
-          const px = nd.x + r * 1.1 * Math.cos(ang);
-          const py = nd.y + r * 1.1 * Math.sin(ang);
-          i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-        }
-        ctx.closePath();
+      if (ctx.roundRect) {
+        ctx.roundRect(x, y, nd.w, nd.h, r);
+      } else {
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + nd.w - r, y);
+        ctx.quadraticCurveTo(x + nd.w, y, x + nd.w, y + r);
+        ctx.lineTo(x + nd.w, y + nd.h - r);
+        ctx.quadraticCurveTo(x + nd.w, y + nd.h, x + nd.w - r, y + nd.h);
+        ctx.lineTo(x + r, y + nd.h);
+        ctx.quadraticCurveTo(x, y + nd.h, x, y + nd.h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
       }
+      ctx.closePath();
     }
 
-    // anel de pulso (par em destaque)
     if (nd.highlight) {
       const pulse = Math.sin(nd.pulse || 0);
       ctx.save();
@@ -287,7 +278,7 @@ function draw() {
       ctx.lineWidth = 2;
       ctx.save();
       ctx.translate(nd.x, nd.y);
-      ctx.scale(1 + 0.18 + 0.08 * pulse, 1 + 0.18 + 0.08 * pulse);
+      ctx.scale(1 + 0.12 + 0.06 * pulse, 1 + 0.12 + 0.06 * pulse);
       ctx.translate(-nd.x, -nd.y);
       buildPath();
       ctx.restore();
@@ -295,7 +286,6 @@ function draw() {
       ctx.restore();
     }
 
-    // forma principal
     ctx.save();
     if (isSel) { ctx.shadowColor = c.stroke; ctx.shadowBlur = 14; }
     buildPath();
@@ -306,37 +296,28 @@ function draw() {
     ctx.stroke();
     ctx.restore();
 
-    // indicadores de marca C/F
     if (nd.linkedToCeiling || nd.linkedToFloor) {
       ctx.save();
-      ctx.font = 'bold 7px DM Mono, monospace';
+      ctx.font = 'bold 9px DM Mono, monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const marks = [];
       if (nd.linkedToCeiling) marks.push({ label: 'C', color: '#d4450c' });
       if (nd.linkedToFloor)   marks.push({ label: 'F', color: '#1d5bbf' });
       marks.forEach((m, i) => {
-        const ox = (marks.length === 2 ? (i === 0 ? -5 : 5) : 0);
+        const ox = (marks.length === 2 ? (i === 0 ? -6 : 6) : 0);
         ctx.fillStyle = m.color;
-        ctx.fillText(m.label, nd.x + ox, nd.y + r - 7);
+        ctx.fillText(m.label, nd.x + ox, nd.y + 11);
       });
       ctx.restore();
     }
 
-    // label
     ctx.save();
     ctx.font = '500 12px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = c.text;
-    let label = nd.label;
-    const maxW = r * 1.8;
-    if (ctx.measureText(label).width > maxW) {
-      while (ctx.measureText(label + '…').width > maxW && label.length > 1)
-        label = label.slice(0, -1);
-      label += '…';
-    }
-    ctx.fillText(label, nd.x, nd.y - 4);
+    ctx.fillText(nd.label, nd.x, nd.y - 4);
     ctx.restore();
   });
 
@@ -384,23 +365,21 @@ document.getElementById('start-btn').addEventListener('click', () => {
     return;
   }
 
-  // reset completo
   nodes = []; edges = []; selected = null; nextId = 0;
   E = new Set(); G = new Set(); tempG = new Set();
   seenPairs = new Set(); pairIdx = 0; round = 1; finished = false;
   if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
 
-  // cria nós, aplica marcas iniciais, preenche E e G
   tetos.forEach(l => {
     const n = createNode(l, 'teto');
     n.fixed = true;
-    n.linkedToCeiling = true;  // C marcado como linkedToCeiling
+    n.linkedToCeiling = true;
     E.add(l); G.add(l);
   });
   pisos.forEach(l => {
     const n = createNode(l, 'piso');
     n.fixed = true;
-    n.linkedToFloor = true;    // F marcado como linkedToFloor
+    n.linkedToFloor = true;
     E.add(l); G.add(l);
   });
   rels.forEach((l, i) => {
@@ -422,7 +401,6 @@ document.getElementById('start-btn').addEventListener('click', () => {
 // ── Fase 2 ────────────────────────────────────────────────
 
 function pathToString(startId, endId) {
-  // BFS para encontrar caminho entre dois nós
   if (startId === endId) return nodes.find(n => n.id === startId)?.label ?? '';
   const visited = new Set([startId]);
   const queue = [[startId, [startId]]];
@@ -446,7 +424,8 @@ function updatePairUI() {
   nodes.forEach(n => { n.highlight = false; n.pulse = 0; });
 
   if (pairIdx >= GE.length) {
-    // fim da rodada: E ← E ∪ G (já feito ao confirmar), G ← tempG
+    propagateMarks();
+
     G = new Set(tempG);
     tempG = new Set();
 
@@ -461,18 +440,15 @@ function updatePairUI() {
     const complete = isGraphComplete();
 
     if (complete) {
-      // todos têm as duas marcas → grafo completo
       document.getElementById('done-msg').style.display = 'none';
       document.getElementById('complete-msg').style.display = 'block';
     } else if (G.size > 0) {
-      // ainda há nós novos → próxima rodada
       GE = buildGE();
       document.getElementById('round-num').textContent = round;
       document.getElementById('done-msg').style.display = GE.length ? 'flex' : 'none';
       document.getElementById('complete-msg').style.display = GE.length ? 'none' : 'block';
       if (!GE.length) GE = buildGEforContinue();
     } else {
-      // G vazio, grafo incompleto mas sem pares novos → oferece continuar
       GE = buildGEforContinue();
       document.getElementById('done-msg').style.display = 'none';
       document.getElementById('complete-msg').style.display = 'block';
@@ -500,7 +476,6 @@ function updatePairUI() {
   const na = nodes.find(n => n.label === labelA);
   const nb = nodes.find(n => n.label === labelB);
 
-  // mostra se já há caminho entre eles
   const pathStr = (na && nb) ? pathToString(na.id, nb.id) : null;
   const msgEl   = document.getElementById('already-connected-msg');
   const pathEl  = document.getElementById('already-connected-path');
@@ -529,26 +504,30 @@ function confirmPair() {
   if (!meio) { advancePair(); return; }
 
   const [labelA, labelB] = GE[pairIdx];
-  const na = nodes.find(n => n.label === labelA);
-  const nb = nodes.find(n => n.label === labelB);
-  if (!na || !nb) { advancePair(); return; }
+  const nA = nodes.find(n => n.label === labelA);
+  const nB = nodes.find(n => n.label === labelB);
+  if (!nA || !nB) { advancePair(); return; }
 
-  if (edgeExists(na.id, nb.id)) removeEdge(na.id, nb.id);
+  let gi = nA, ei = nB;
+  if      (nA.linkedToCeiling && nB.linkedToFloor)  { gi = nA; ei = nB; }
+  else if (nB.linkedToCeiling && nA.linkedToFloor)  { gi = nB; ei = nA; }
+  else if (nB.linkedToCeiling && !nA.linkedToCeiling) { gi = nB; ei = nA; }
+  else if (nA.linkedToFloor   && !nB.linkedToFloor)   { gi = nB; ei = nA; }
+
+  if (edgeExists(gi.id, ei.id)) removeEdge(gi.id, ei.id);
+  if (edgeExists(ei.id, gi.id)) removeEdge(ei.id, gi.id);
 
   let nm = findNode(meio);
   if (!nm) {
-    const mx = (na.x + nb.x) / 2 + (Math.random() - 0.5) * 30;
-    const my = (na.y + nb.y) / 2 + (Math.random() - 0.5) * 30;
+    const mx = (gi.x + ei.x) / 2 + (Math.random() - 0.5) * 30;
+    const my = (gi.y + ei.y) / 2 + (Math.random() - 0.5) * 30;
     nm = createNode(meio, 'meio', mx, my);
     tempG.add(meio);
     E.add(meio);
   }
 
-  getOrCreateEdge(na.id, nm.id);
-  getOrCreateEdge(nm.id, nb.id);
-
-  // propaga marcas após inserção das arestas
-  propagateMarks();
+  getOrCreateEdge(ei.id, nm.id);
+  getOrCreateEdge(nm.id, gi.id);
 
   advancePair();
 }
@@ -591,7 +570,9 @@ function continueLoop() {
   startSim(300);
 }
 
+// ── Encerrar: executa poda automaticamente antes de finalizar ──
 function finishLoop() {
+  executePoda();   // ← poda integrada aqui
   finished = true;
   nodes.forEach(n => { n.highlight = false; n.pulse = 0; });
   document.getElementById('pair-prompt').style.opacity = '0.4';
@@ -619,97 +600,6 @@ document.getElementById('input-meio').addEventListener('keydown', e => {
   if (e.key === 'Escape') advancePair();
 });
 
-// ── Função de Poda ────────────────────────────────────────
-// Função Auxiliar para fazer a Busca no Grafo
-function getReachable(startId){
-  const visited = new Set();
-  const fila = [startId];
-
-  visited.add(startId);
-
-  while(fila.length > 0){
-    const currentId = fila.shift();
-    edges.forEach(e => {
-      let vizinhoId = null;
-
-      if(e.from === currentId){
-        vizinhoId = e.to;
-      } else if(e.to === currentId){
-        vizinhoId = e.from;
-      }
-
-      if(vizinhoId !== null && !visited.has(vizinhoId)){
-        visited.add(vizinhoId);
-        fila.push(vizinhoId);
-      }
-    });
-  }
-
-  return visited;
-}
-
-// Função Principal da Poda
-function poda(){
-  const removidos = [];
-  let alterou = true;
-
-  while(alterou){
-    alterou = false;
-
-    const nosVerificaveis = nodes.filter(
-      n => n.group !== 'teto' && n.group !== 'piso'
-    );
-
-    for(const no of nosVerificaveis){
-      const alcancaveis = getReachable(no.id);
-
-      const temTeto = nodes.some(
-        n => n.group === 'teto' && alcancaveis.has(n.id)
-      );
-
-      const temPiso = nodes.some(
-        n => n.group === 'teto' && alcancaveis.has(n.id)
-      );
-
-      if(!temTeto || !temPiso){
-        removidos.push(no.label);
-
-        edges = edges.filter(
-          e => e.from !== no.id && e.to !== no.id
-        );
-
-        nodes = nodes.filter(n => n.id !== no.id);
-
-        alterou = true;
-
-        break;
-      }
-    }
-  }
-
-  return removidos;
-}
-
-// Função Executa Poda + Mostra o resultado
-function executarPoda(){
-  const removidos = poda();
-
-  startSim(400);
-
-  if(removidos.length == 0){
-    alert('Poda Concluída!\n\nNenhum nó foi removido.\nTodos os elementos já estão conectados ao teto e ao piso');
-
-  } else {
-    const lista = removidos.map(r => ' • ' + r).join('\n');
-    alert(
-      `Poda Concluída!\n\n` +
-      `${removidos.length} nó(s) removido(s) por não terem caminho\n` +
-      `áté o TETO e o PISO ao mesmo tempo:\n\n` +
-      lista
-    );
-  }
-}
-
 // ── Reset ─────────────────────────────────────────────────
 
 function resetAll() {
@@ -735,12 +625,9 @@ document.getElementById('reset-btn2').addEventListener('click', resetAll);
 
 function nodeAt(x, y) {
   return nodes.slice().reverse().find(nd => {
-    const dx = x - nd.x, dy = y - nd.y, r = 28;
-    if (nd.group === 'teto' || nd.group === 'piso')
-      return Math.abs(dx) <= r * 1.1 && Math.abs(dy) <= r * 1.1;
-    if (nd.group === 'relacionado')
-      return Math.abs(dx) <= r * 1.1 && Math.abs(dy) <= r * 1.3;
-    return Math.hypot(dx, dy) <= r;
+    const hw = (nd.w || 60) / 2;
+    const hh = (nd.h || 42) / 2;
+    return Math.abs(x - nd.x) <= hw && Math.abs(y - nd.y) <= hh;
   });
 }
 

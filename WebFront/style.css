@@ -189,6 +189,7 @@ input[type="text"]:focus {
   margin-top: 6px;
 }
 
+/* ── Base button ─────────────────────────────── */
 button {
   height: 36px;
   padding: 0 14px;
@@ -202,6 +203,7 @@ button {
   background: var(--surface2);
   color: var(--text-muted);
   transition: all 0.15s;
+  white-space: nowrap;
 }
 
 button:hover { background: var(--border); color: var(--text); }
@@ -212,13 +214,13 @@ button:hover { background: var(--border); color: var(--text); }
   border-color: var(--accent) !important;
   box-shadow: 0 2px 8px rgba(124,34,212,0.25);
 }
-.btn-primary:hover { opacity: 0.9; }
+.btn-primary:hover { opacity: 0.9; background: var(--accent) !important; }
 
 .btn-success {
-  background: var(--rel) !important;
-  color: #fff !important;
-  border-color: var(--rel) !important;
-  box-shadow: 0 2px 8px rgba(26,122,63,0.2);
+  background: #278d5d !important;
+  color: #ffffff !important;
+  border-color: #278d5d !important;
+  box-shadow: 0 2px 8px rgba(15,255,83,0.25);
 }
 .btn-success:hover { opacity: 0.9; }
 
@@ -227,7 +229,11 @@ button:hover { background: var(--border); color: var(--text); }
   border-color: var(--border) !important;
   color: var(--text-muted) !important;
 }
-.btn-ghost:hover { background: var(--surface2) !important; color: var(--text) !important; }
+.btn-ghost:hover {
+  background: var(--surface2) !important;
+  color: var(--text) !important;
+  border-color: var(--border2) !important;
+}
 
 /* ── Fase 2 ─────────────────────────────────── */
 #phase2-header {
@@ -247,7 +253,10 @@ button:hover { background: var(--border); color: var(--text); }
   border-color: #f5c4b2 !important;
   background: var(--teto-dim) !important;
 }
-#stop-btn:hover { border-color: var(--teto) !important; }
+#stop-btn:hover {
+  border-color: var(--teto) !important;
+  background: #fad6c8 !important;
+}
 
 #pair-status {
   display: flex;
@@ -337,12 +346,49 @@ button:hover { background: var(--border); color: var(--text); }
   box-shadow: 0 0 0 3px rgba(124,34,212,0.1);
 }
 
+/* ── Phase 2 action buttons ─────────────────── */
 #phase2-actions {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
 }
 
+/* Row: Confirmar (wide) + Pular (compact) */
+.btn-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.btn-row-main {
+  /* fills remaining space */
+}
+
+.btn-row-skip {
+  padding: 0 14px !important;
+  font-size: 11px !important;
+}
+
+/* Restart sits below, full width, visually quieter */
+.btn-restart {
+  width: 100%;
+  font-size: 11px !important;
+  color: var(--text-muted) !important;
+  border-color: var(--border) !important;
+  background: transparent !important;
+  letter-spacing: 0.03em !important;
+  height: 32px !important;
+  opacity: 0.7;
+}
+
+.btn-restart:hover {
+  opacity: 1;
+  background: var(--surface2) !important;
+  color: var(--text) !important;
+}
+
+/* ── Done / Complete / Finished msgs ─────────── */
 #done-msg {
   display: none;
   flex-direction: column;
@@ -431,13 +477,6 @@ button:hover { background: var(--border); color: var(--text); }
   font-size: 11px;
   color: var(--text-muted);
   font-family: 'DM Mono', monospace;
-}
-
-.btn-success {
-  background: #278d5d !important;
-  color: #ffffff !important;
-  border-color: #278d5d !important;
-  box-shadow: 0 2px 8px rgba(15, 255, 83, 0.25);
 }
 
 /* ── Legend ─────────────────────────────────── */

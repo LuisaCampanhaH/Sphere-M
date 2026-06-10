@@ -156,13 +156,22 @@ function buildGEforContinue() {
 }
 
 // ── Simulação de forças ───────────────────────────────────
-const REPULSION = 10000, SPRING_LEN = 160, SPRING_K = 0.05, DAMPING = 0.82, CENTER_K = 0.008;
+const REPULSION = 28000, SPRING_LEN = 220, SPRING_K = 0.04, DAMPING = 0.82, CENTER_K = 0.008;
+
+// Target Y bands for each group (fractions of H)
+const GROUP_TARGET_Y = { teto: 0.10, piso: 0.90, relacionado: 0.50, meio: 0.50 };
+const GROUP_Y_K      = { teto: 0.06, piso: 0.06, relacionado: 0.04, meio: 0.035 };
+// Target X: teto/piso/relacionado pulled to center-X; meios pulled together sideways
+const GROUP_X_K      = { teto: 0.02, piso: 0.02, relacionado: 0.02, meio: 0.0 };
+
 let simSteps = 0;
 
 function simulateStep() {
   const n = nodes.length;
   if (!n) return;
   nodes.forEach(nd => { nd.fx = 0; nd.fy = 0; });
+
+  // Repulsion between all pairs
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       const a = nodes[i], b = nodes[j];
@@ -173,6 +182,8 @@ function simulateStep() {
       a.fx -= fx; a.fy -= fy; b.fx += fx; b.fy += fy;
     }
   }
+
+  // Spring forces along edges
   edges.forEach(e => {
     const a = nodes.find(n => n.id === e.from), b = nodes.find(n => n.id === e.to);
     if (!a || !b) return;
@@ -182,10 +193,34 @@ function simulateStep() {
     const fx = (dx / dist) * force, fy = (dy / dist) * force;
     a.fx += fx; a.fy += fy; b.fx -= fx; b.fy -= fy;
   });
+
+  // Group-based gravity: each group is pulled to its target Y band
   nodes.forEach(nd => {
-    nd.fx += (W / 2 - nd.x) * CENTER_K;
-    nd.fy += (H / 2 - nd.y) * CENTER_K;
+    const targetY = (GROUP_TARGET_Y[nd.group] ?? 0.5) * H;
+    const yK      = GROUP_Y_K[nd.group] ?? CENTER_K;
+    nd.fy += (targetY - nd.y) * yK;
+
+    // X gravity: non-meio nodes pulled toward center-X
+    const xK = GROUP_X_K[nd.group] ?? 0;
+    nd.fx += (W / 2 - nd.x) * xK;
   });
+
+  // Meios: pulled toward center-X (gentle) + slight sibling clustering on X
+  const meioNodes = nodes.filter(nd => nd.group === 'meio');
+  if (meioNodes.length > 1) {
+    // Sort by id so order is stable, then space them evenly around center-X
+    const sorted = [...meioNodes].sort((a, b) => a.id - b.id);
+    const spacing = Math.min(140, (W * 0.6) / sorted.length);
+    const totalW  = spacing * (sorted.length - 1);
+    sorted.forEach((nd, i) => {
+      const targetX = W / 2 - totalW / 2 + i * spacing;
+      nd.fx += (targetX - nd.x) * 0.025;
+    });
+  } else if (meioNodes.length === 1) {
+    meioNodes[0].fx += (W / 2 - meioNodes[0].x) * 0.025;
+  }
+
+  // Integrate
   nodes.forEach(nd => {
     if (dragging && dragging.id === nd.id) return;
     if (nd.fixed) return;
@@ -372,23 +407,27 @@ document.getElementById('start-btn').addEventListener('click', () => {
 
   tetos.forEach(l => {
     const n = createNode(l, 'teto');
-    n.fixed = true;
     n.linkedToCeiling = true;
     E.add(l); G.add(l);
   });
   pisos.forEach(l => {
     const n = createNode(l, 'piso');
-    n.fixed = true;
     n.linkedToFloor = true;
     E.add(l); G.add(l);
   });
   rels.forEach((l, i) => {
     const n = createNode(l, 'relacionado');
-    n.fixed = true; n.relIdx = i;
+    n.relIdx = i;
     E.add(l); G.add(l);
   });
 
-  layoutNodes(nodes);
+  // Seed initial positions by group so forces converge faster
+  nodes.forEach(nd => {
+    const targetY = (GROUP_TARGET_Y[nd.group] ?? 0.5) * H;
+    nd.x = W / 2 + (Math.random() - 0.5) * W * 0.5;
+    nd.y = targetY + (Math.random() - 0.5) * 40;
+    nd.vx = 0; nd.vy = 0;
+  });
   GE = buildGE();
   pairIdx = 0;
 

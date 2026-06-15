@@ -4,6 +4,7 @@ let W = canvas.parentElement.clientWidth || 800;
 let H = canvas.parentElement.clientHeight || 600;
 canvas.width = W;
 canvas.height = H;
+let sessionId = 0;
 
 // resize handler
 window.addEventListener('resize', () => {
@@ -28,10 +29,10 @@ let round = 1;
 let finished = false;
 
 const GROUP_COLORS = {
-  teto:        { fill: '#fdeee8', stroke: '#d4450c', text: '#7a2506' },
-  piso:        { fill: '#e8effe', stroke: '#1d5bbf', text: '#0e3275' },
+  teto: { fill: '#fdeee8', stroke: '#d4450c', text: '#7a2506' },
+  piso: { fill: '#e8effe', stroke: '#1d5bbf', text: '#0e3275' },
   relacionado: { fill: '#e8f7ee', stroke: '#1a7a3f', text: '#0d4422' },
-  meio:        { fill: '#f3eafd', stroke: '#7c22d4', text: '#4a0e87' },
+  meio: { fill: '#f3eafd', stroke: '#7c22d4', text: '#4a0e87' },
 };
 
 // ── Nós ──────────────────────────────────────────────────
@@ -74,7 +75,7 @@ function edgeExists(idA, idB) {
 // ── Propagação de marcas ─────────────────────────────────
 
 function propagateMarks() {
-  const cQueue   = nodes.filter(nd => nd.linkedToCeiling).map(nd => nd.id);
+  const cQueue = nodes.filter(nd => nd.linkedToCeiling).map(nd => nd.id);
   const cVisited = new Set(cQueue);
   while (cQueue.length) {
     const cur = cQueue.shift();
@@ -89,7 +90,7 @@ function propagateMarks() {
     }
   }
 
-  const fQueue   = nodes.filter(nd => nd.linkedToFloor).map(nd => nd.id);
+  const fQueue = nodes.filter(nd => nd.linkedToFloor).map(nd => nd.id);
   const fVisited = new Set(fQueue);
   while (fQueue.length) {
     const cur = fQueue.shift();
@@ -125,7 +126,7 @@ function executePoda() {
     // resetar marcas para re-propagar do zero na próxima iteração
     nodes.forEach(nd => {
       if (nd.group !== 'teto') nd.linkedToCeiling = false;
-      if (nd.group !== 'piso') nd.linkedToFloor   = false;
+      if (nd.group !== 'piso') nd.linkedToFloor = false;
     });
   }
 }
@@ -160,9 +161,9 @@ const REPULSION = 28000, SPRING_LEN = 220, SPRING_K = 0.04, DAMPING = 0.82, CENT
 
 // Target Y bands for each group (fractions of H)
 const GROUP_TARGET_Y = { teto: 0.10, piso: 0.90, relacionado: 0.50, meio: 0.50 };
-const GROUP_Y_K      = { teto: 0.06, piso: 0.06, relacionado: 0.04, meio: 0.035 };
+const GROUP_Y_K = { teto: 0.06, piso: 0.06, relacionado: 0.04, meio: 0.035 };
 // Target X: teto/piso/relacionado pulled to center-X; meios pulled together sideways
-const GROUP_X_K      = { teto: 0.02, piso: 0.02, relacionado: 0.02, meio: 0.0 };
+const GROUP_X_K = { teto: 0.02, piso: 0.02, relacionado: 0.02, meio: 0.0 };
 
 let simSteps = 0;
 
@@ -197,7 +198,7 @@ function simulateStep() {
   // Group-based gravity: each group is pulled to its target Y band
   nodes.forEach(nd => {
     const targetY = (GROUP_TARGET_Y[nd.group] ?? 0.5) * H;
-    const yK      = GROUP_Y_K[nd.group] ?? CENTER_K;
+    const yK = GROUP_Y_K[nd.group] ?? CENTER_K;
     nd.fy += (targetY - nd.y) * yK;
 
     // X gravity: non-meio nodes pulled toward center-X
@@ -211,7 +212,7 @@ function simulateStep() {
     // Sort by id so order is stable, then space them evenly around center-X
     const sorted = [...meioNodes].sort((a, b) => a.id - b.id);
     const spacing = Math.min(140, (W * 0.6) / sorted.length);
-    const totalW  = spacing * (sorted.length - 1);
+    const totalW = spacing * (sorted.length - 1);
     sorted.forEach((nd, i) => {
       const targetX = W / 2 - totalW / 2 + i * spacing;
       nd.fx += (targetX - nd.x) * 0.025;
@@ -338,7 +339,7 @@ function draw() {
       ctx.textBaseline = 'middle';
       const marks = [];
       if (nd.linkedToCeiling) marks.push({ label: 'C', color: '#d4450c' });
-      if (nd.linkedToFloor)   marks.push({ label: 'F', color: '#1d5bbf' });
+      if (nd.linkedToFloor) marks.push({ label: 'F', color: '#1d5bbf' });
       marks.forEach((m, i) => {
         const ox = (marks.length === 2 ? (i === 0 ? -6 : 6) : 0);
         ctx.fillStyle = m.color;
@@ -386,8 +387,8 @@ function layoutNodes(nodeList) {
 
 document.getElementById('start-btn').addEventListener('click', () => {
   const tetos = parseList(document.getElementById('input-teto').value);
-  const pisos  = parseList(document.getElementById('input-piso').value);
-  const rels   = parseList(document.getElementById('input-rel').value);
+  const pisos = parseList(document.getElementById('input-piso').value);
+  const rels = parseList(document.getElementById('input-rel').value);
 
   if (!tetos.length || !pisos.length) {
     ['input-teto', 'input-piso'].forEach(id => {
@@ -458,10 +459,113 @@ function pathToString(startId, endId) {
   return null;
 }
 
-function updatePairUI() {
+let _aiCurrentPair = null; 
+
+async function callAI(labelGi, labelEi) {
+  const domainContext = [...E].join(', ');
+
+  const systemPrompt = `Você é um ontólogo.
+
+Sua tarefa é analisar dois elementos de um domínio ontológico e determinar se existe algum tipo de relação entre eles.
+
+Regras:
+- Se existir relação, descreva-a em linguagem natural, de forma clara e objetiva (2 a 4 frases).
+- Se não existir relação significativa entre os dois elementos neste domínio, diga isso claramente em uma frase.
+- Não invente relações que não existam de fato.
+- Seja direto. Não use introduções como "Com certeza" ou "Ótima pergunta".`;
+
+  const userPrompt = `O domínio de conhecimento sendo investigado é composto pelos seguintes elementos: ${domainContext}.
+
+Considere esse contexto ao interpretar os elementos abaixo.
+
+Determine se há uma relação entre "${labelGi}" e "${labelEi}". Se houver, descreva a relação.`;
+
+  try {
+    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer YqO39pccm4tnqUNQMiRqJXUypPCZPjoM',
+      },
+      body: JSON.stringify({
+        model: 'mistral-medium-latest',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: userPrompt   },
+        ],
+        max_tokens: 1000,
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    return data?.choices?.[0]?.message?.content ?? null;
+  } catch {
+    return null;
+  }
+}
+ 
+// ── Detecta se a resposta indica "sem relação" ───────────────────────
+ 
+function aiFoundRelation(text) {
+  if (!text) return false;
+  const negatives = [
+    'não há relação', 'não existe relação', 'não possuem relação',
+    'sem relação', 'não estão diretamente relacionados',
+    'não há conexão', 'não existe conexão', 'não têm relação',
+    'não há uma relação', 'não há nenhuma relação',
+  ];
+  const lower = text.toLowerCase();
+  return !negatives.some(phrase => lower.includes(phrase));
+}
+
+
+// ── Helpers de estado do bloco IA ────────────────────────────────────
+
+function showAIIdle() {
+  _setAIState('idle');
+  document.getElementById('ai-hint').style.display = 'none';
+}
+
+function showAILoading() {
+  _setAIState('loading');
+  document.getElementById('ai-hint').style.display = 'none';
+}
+
+function showAIError() {
+  _setAIState('error');
+  document.getElementById('ai-hint').style.display = 'none';
+}
+
+function showAIResult(text, hasRelation) {
+  _setAIState('result');
+  document.getElementById('ai-result-text').textContent = text;
+
+  const badge = document.getElementById('ai-relation-badge');
+  if (hasRelation) {
+    badge.textContent = 'Relação encontrada';
+    badge.className = 'found';
+  } else {
+    badge.textContent = 'Sem relação';
+    badge.className = 'not-found';
+  }
+
+  document.getElementById('ai-hint').style.display = hasRelation ? 'block' : 'none';
+}
+
+function _setAIState(state) {
+  ['idle', 'loading', 'result', 'error'].forEach(s => {
+    const el = document.getElementById(`ai-${s}`);
+    if (el) el.style.display = s === state ? (state === 'result' ? 'block' : 'flex') : 'none';
+  });
+}
+
+async function updatePairUI() {
   if (finished) return;
   nodes.forEach(n => { n.highlight = false; n.pulse = 0; });
 
+  // ── Fim da rodada ──────────────────────────────────────────────
   if (pairIdx >= GE.length) {
     propagateMarks();
 
@@ -475,6 +579,8 @@ function updatePairUI() {
     document.getElementById('already-connected-msg').style.display = 'none';
     document.getElementById('pair-counter').textContent = 'Rodada ' + round + ' concluída!';
     document.getElementById('progress-bar').style.width = '100%';
+
+    showAIIdle();
 
     const complete = isGraphComplete();
 
@@ -497,16 +603,18 @@ function updatePairUI() {
     return;
   }
 
+  // ── Exibir par atual ───────────────────────────────────────────
   const [labelA, labelB] = GE[pairIdx];
+  _aiCurrentPair = [labelA, labelB];
 
   document.getElementById('node-a-label').textContent = labelA;
   document.getElementById('node-b-label').textContent = labelB;
   document.getElementById('pair-counter').textContent = `Par ${pairIdx + 1} de ${GE.length}  (Rodada ${round})`;
   document.getElementById('progress-bar').style.width = `${(pairIdx / GE.length) * 100}%`;
   document.getElementById('input-meio').value = '';
-  document.getElementById('input-meio').disabled = false;
-  document.getElementById('confirm-btn').disabled = false;
-  document.getElementById('skip-btn').disabled = false;
+  document.getElementById('input-meio').disabled = true;   // desabilita até a IA responder
+  document.getElementById('confirm-btn').disabled = true;
+  document.getElementById('skip-btn').disabled = false;    // pular sempre disponível
   document.getElementById('done-msg').style.display = 'none';
   document.getElementById('complete-msg').style.display = 'none';
   document.getElementById('finished-msg').style.display = 'none';
@@ -516,8 +624,8 @@ function updatePairUI() {
   const nb = nodes.find(n => n.label === labelB);
 
   const pathStr = (na && nb) ? pathToString(na.id, nb.id) : null;
-  const msgEl   = document.getElementById('already-connected-msg');
-  const pathEl  = document.getElementById('already-connected-path');
+  const msgEl = document.getElementById('already-connected-msg');
+  const pathEl = document.getElementById('already-connected-path');
   const inputEl = document.getElementById('input-meio');
 
   if (pathStr) {
@@ -527,14 +635,36 @@ function updatePairUI() {
     inputEl.classList.add('is-extra');
   } else {
     msgEl.style.display = 'none';
-    inputEl.placeholder = 'Palavra(s) do meio — use vírgula para vários';
+    inputEl.placeholder = 'Palavras extraídas do texto da IA — vírgula para várias';
     inputEl.classList.remove('is-extra');
   }
 
   if (na) na.highlight = true;
   if (nb) nb.highlight = true;
-  document.getElementById('input-meio').focus();
   startSim(200);
+
+  // ── Chamada à IA ───────────────────────────────────────────────
+  showAILoading();
+
+  const currentSession = sessionId;
+  const aiText = await callAI(labelA, labelB);
+
+  if (finished || sessionId !== currentSession) return;
+
+  if (aiText === null) {
+    showAIError();
+    // Habilita skip mesmo com erro, para o fluxo não travar
+    document.getElementById('skip-btn').disabled = false;
+    return;
+  }
+
+  const hasRelation = aiFoundRelation(aiText);
+  showAIResult(aiText, hasRelation);
+
+  // Habilita entrada e confirmação só agora
+  document.getElementById('input-meio').disabled = false;
+  document.getElementById('confirm-btn').disabled = false;
+  document.getElementById('input-meio').focus();
 }
 
 function confirmPair() {
@@ -552,10 +682,10 @@ function confirmPair() {
   if (!nA || !nB) { advancePair(); return; }
 
   let gi = nA, ei = nB;
-  if      (nA.linkedToCeiling && nB.linkedToFloor)    { gi = nA; ei = nB; }
-  else if (nB.linkedToCeiling && nA.linkedToFloor)    { gi = nB; ei = nA; }
+  if (nA.linkedToCeiling && nB.linkedToFloor) { gi = nA; ei = nB; }
+  else if (nB.linkedToCeiling && nA.linkedToFloor) { gi = nB; ei = nA; }
   else if (nB.linkedToCeiling && !nA.linkedToCeiling) { gi = nB; ei = nA; }
-  else if (nA.linkedToFloor   && !nB.linkedToFloor)   { gi = nB; ei = nA; }
+  else if (nA.linkedToFloor && !nB.linkedToFloor) { gi = nB; ei = nA; }
 
   // Remove any direct edge between the pair
   if (edgeExists(gi.id, ei.id)) removeEdge(gi.id, ei.id);
@@ -639,7 +769,7 @@ function finishLoop() {
 // ── Theme toggle ──────────────────────────────────────────
 (function () {
   const html = document.documentElement;
-  const btn  = document.getElementById('theme-toggle');
+  const btn = document.getElementById('theme-toggle');
   const icon = document.getElementById('theme-icon');
   const saved = localStorage.getItem('sphere-theme');
   if (saved) html.setAttribute('data-theme', saved);
@@ -663,6 +793,22 @@ document.getElementById('stop-btn').addEventListener('click', finishLoop);
 document.getElementById('finish-btn').addEventListener('click', finishLoop);
 document.getElementById('next-round-btn').addEventListener('click', startNextRound);
 document.getElementById('continue-btn').addEventListener('click', continueLoop);
+document.getElementById('ai-retry-btn').addEventListener('click', async () => {
+  if (!_aiCurrentPair) return;
+  const [labelA, labelB] = _aiCurrentPair;
+  showAILoading();
+  document.getElementById('input-meio').disabled = true;
+  document.getElementById('confirm-btn').disabled = true;
+  const aiText = await callAI(labelA, labelB);
+  if (aiText === null) {
+    showAIError();
+  } else {
+    showAIResult(aiText, aiFoundRelation(aiText));
+    document.getElementById('input-meio').disabled = false;
+    document.getElementById('confirm-btn').disabled = false;
+    document.getElementById('input-meio').focus();
+  }
+});
 document.getElementById('input-meio').addEventListener('keydown', e => {
   if (e.key === 'Enter') confirmPair();
   if (e.key === 'Escape') advancePair();
@@ -671,6 +817,7 @@ document.getElementById('input-meio').addEventListener('keydown', e => {
 // ── Reset ─────────────────────────────────────────────────
 
 function resetAll() {
+  sessionId++;
   nodes = []; edges = []; selected = null; nextId = 0;
   E = new Set(); G = new Set(); tempG = new Set();
   GE = []; seenPairs = new Set(); pairIdx = 0; round = 1; finished = false;
@@ -680,6 +827,7 @@ function resetAll() {
   document.getElementById('finished-msg').style.display = 'none';
   document.getElementById('complete-msg').style.display = 'none';
   document.getElementById('done-msg').style.display = 'none';
+  document.getElementById('stop-btn').disabled = false;
   document.getElementById('input-teto').value = '';
   document.getElementById('input-piso').value = '';
   document.getElementById('input-rel').value = '';
@@ -703,7 +851,7 @@ function getPos(e) {
   const rect = canvas.getBoundingClientRect();
   return {
     x: (e.clientX - rect.left) * (W / rect.width),
-    y: (e.clientY - rect.top)  * (H / rect.height),
+    y: (e.clientY - rect.top) * (H / rect.height),
   };
 }
 

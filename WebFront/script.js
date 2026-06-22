@@ -944,6 +944,91 @@ canvas.addEventListener('mouseup', () => {
 
 canvas.addEventListener('mouseleave', () => { dragging = null; });
 
+// ── Edição inline de nós (duplo clique) ──────────────────
+
+let editingNode = null;
+let nodeEditInput = null;
+
+function startNodeEdit(node) {
+  if (editingNode) commitNodeEdit();
+  editingNode = node;
+
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = rect.width / W;
+  const scaleY = rect.height / H;
+
+  nodeEditInput = document.createElement('input');
+  nodeEditInput.type = 'text';
+  nodeEditInput.value = node.label;
+  nodeEditInput.style.position = 'fixed';
+  nodeEditInput.style.left = (rect.left + (node.x - node.w / 2) * scaleX) + 'px';
+  nodeEditInput.style.top  = (rect.top  + (node.y - node.h / 2) * scaleY) + 'px';
+  nodeEditInput.style.width = (node.w * scaleX) + 'px';
+  nodeEditInput.style.height = '26px';
+  nodeEditInput.style.font = '500 12px "Geist Mono", ui-monospace, monospace';
+  nodeEditInput.style.textAlign = 'center';
+  nodeEditInput.style.border = '2px solid ' + (GROUP_COLORS[node.group]?.stroke || '#888');
+  nodeEditInput.style.borderRadius = '4px';
+  nodeEditInput.style.background = GROUP_COLORS[node.group]?.fill || '#fff';
+  nodeEditInput.style.color = GROUP_COLORS[node.group]?.text || '#000';
+  nodeEditInput.style.outline = 'none';
+  nodeEditInput.style.padding = '0 4px';
+  nodeEditInput.style.boxSizing = 'border-box';
+  nodeEditInput.style.zIndex = '9999';
+  nodeEditInput.style.boxShadow = '0 2px 8px rgba(0,0,0,0.18)';
+
+  document.body.appendChild(nodeEditInput);
+  nodeEditInput.select();
+
+  nodeEditInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); commitNodeEdit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancelNodeEdit(); }
+  });
+  nodeEditInput.addEventListener('blur', () => commitNodeEdit());
+}
+
+function commitNodeEdit() {
+  if (!editingNode || !nodeEditInput) return;
+  const newLabel = nodeEditInput.value.trim();
+  if (newLabel && newLabel !== editingNode.label) {
+    const oldLabel = editingNode.label;
+    editingNode.label = newLabel;
+
+    // Atualiza os conjuntos E, G, tempG para refletir o novo nome
+    if (E.has(oldLabel))     { E.delete(oldLabel);     E.add(newLabel); }
+    if (G.has(oldLabel))     { G.delete(oldLabel);     G.add(newLabel); }
+    if (tempG.has(oldLabel)) { tempG.delete(oldLabel); tempG.add(newLabel); }
+
+    // Atualiza seenPairs que referenciam o label antigo
+    const updatedPairs = new Set();
+    for (const pair of seenPairs) {
+      const parts = pair.split('|||');
+      const updated = parts.map(p => p === oldLabel ? newLabel : p).sort().join('|||');
+      updatedPairs.add(updated);
+    }
+    seenPairs = updatedPairs;
+  }
+  nodeEditInput.remove();
+  nodeEditInput = null;
+  editingNode = null;
+  draw();
+}
+
+function cancelNodeEdit() {
+  if (nodeEditInput) { nodeEditInput.remove(); nodeEditInput = null; }
+  editingNode = null;
+  draw();
+}
+
+canvas.addEventListener('dblclick', e => {
+  const p = getPos(e);
+  const node = nodeAt(p.x, p.y);
+  if (node) {
+    e.preventDefault();
+    startNodeEdit(node);
+  }
+});
+
 document.addEventListener('keydown', e => {
   const tag = document.activeElement.tagName;
   if ((e.key === 'Delete' || e.key === 'Backspace') && selected && tag !== 'INPUT') {

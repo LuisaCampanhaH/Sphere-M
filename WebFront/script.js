@@ -48,7 +48,7 @@ function createNode(label, group, x, y) {
     x: x !== undefined ? x : W / 2 + (Math.random() - 0.5) * 100,
     y: y !== undefined ? y : H / 2 + (Math.random() - 0.5) * 100,
     vx: 0, vy: 0,
-    w: 60, h: 42,
+    w: 64, h: 30,   // will be recalculated on first draw()
     highlight: false, pulse: 0,
     linkedToCeiling: false,
     linkedToFloor: false,
@@ -227,8 +227,8 @@ function simulateStep() {
     if (nd.fixed) return;
     nd.vx = (nd.vx + nd.fx) * DAMPING;
     nd.vy = (nd.vy + nd.fy) * DAMPING;
-    nd.x = Math.max(36, Math.min(W - 36, nd.x + nd.vx));
-    nd.y = Math.max(36, Math.min(H - 36, nd.y + nd.vy));
+    nd.x = Math.max(nd.w / 2 + 4, Math.min(W - nd.w / 2 - 4, nd.x + nd.vx));
+    nd.y = Math.max(nd.h / 2 + 4, Math.min(H - nd.h / 2 - 4, nd.y + nd.vy));
   });
 }
 
@@ -261,13 +261,45 @@ function draw() {
       ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
     }
 
-  ctx.font = '500 12px sans-serif';
+  // ── Measure node sizes (two-zone design) ──────────────────
+  const LABEL_FONT = '500 12px "Geist Mono", ui-monospace, monospace';
+  ctx.font = LABEL_FONT;
+  const NODE_R     = 5;   // border radius
+  const ACCENT_H   = 3;   // top color stripe height
+  const LABEL_ZONE = 30;  // height of label area
+  const BADGE_ZONE = 20;  // height of C/F badge area
+  const BADGE_W    = 22;  // width of each C/F pill
+  const BADGE_H    = 13;  // height of each C/F pill
+  const BADGE_R    = 3;   // radius of C/F pill
+
   nodes.forEach(nd => {
     const textW = ctx.measureText(nd.label).width;
-    nd.w = Math.max(textW + 30, 60);
-    nd.h = 42;
+    nd.w = Math.max(textW + 28, 64);
+    nd.hasBadges = nd.linkedToCeiling || nd.linkedToFloor;
+    nd.h = LABEL_ZONE + (nd.hasBadges ? BADGE_ZONE : 0);
   });
 
+  // ── Helper: rounded rect path ──────────────────────────────
+  function roundRect(rx, ry, rw, rh, radii) {
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(rx, ry, rw, rh, radii);
+    } else {
+      const r = Array.isArray(radii) ? radii : [radii, radii, radii, radii];
+      ctx.moveTo(rx + r[0], ry);
+      ctx.lineTo(rx + rw - r[1], ry);
+      ctx.quadraticCurveTo(rx + rw, ry,      rx + rw,      ry + r[1]);
+      ctx.lineTo(rx + rw,      ry + rh - r[2]);
+      ctx.quadraticCurveTo(rx + rw, ry + rh, rx + rw - r[2], ry + rh);
+      ctx.lineTo(rx + r[3],      ry + rh);
+      ctx.quadraticCurveTo(rx,      ry + rh, rx,            ry + rh - r[3]);
+      ctx.lineTo(rx,            ry + r[0]);
+      ctx.quadraticCurveTo(rx,      ry,      rx + r[0],     ry);
+    }
+    ctx.closePath();
+  }
+
+  // ── Draw edges ──────────────────────────────────────────────
   edges.forEach(e => {
     const a = nodes.find(n => n.id === e.from), b = nodes.find(n => n.id === e.to);
     if (!a || !b) return;
@@ -281,80 +313,106 @@ function draw() {
     ctx.restore();
   });
 
+  // ── Draw nodes ──────────────────────────────────────────────
   nodes.forEach(nd => {
-    const c = GROUP_COLORS[nd.group] || GROUP_COLORS.meio;
+    const c   = GROUP_COLORS[nd.group] || GROUP_COLORS.meio;
     const isSel = selected && selected.id === nd.id;
+    const nx  = nd.x - nd.w / 2;
+    const ny  = nd.y - nd.h / 2;
+    const nw  = nd.w;
+    const nh  = nd.h;
 
-    function buildPath() {
-      const r = 6;
-      const x = nd.x - nd.w / 2;
-      const y = nd.y - nd.h / 2;
-      ctx.beginPath();
-      if (ctx.roundRect) {
-        ctx.roundRect(x, y, nd.w, nd.h, r);
-      } else {
-        ctx.moveTo(x + r, y);
-        ctx.lineTo(x + nd.w - r, y);
-        ctx.quadraticCurveTo(x + nd.w, y, x + nd.w, y + r);
-        ctx.lineTo(x + nd.w, y + nd.h - r);
-        ctx.quadraticCurveTo(x + nd.w, y + nd.h, x + nd.w - r, y + nd.h);
-        ctx.lineTo(x + r, y + nd.h);
-        ctx.quadraticCurveTo(x, y + nd.h, x, y + nd.h - r);
-        ctx.lineTo(x, y + r);
-        ctx.quadraticCurveTo(x, y, x + r, y);
-      }
-      ctx.closePath();
-    }
-
+    // ── Pulse ring for highlighted nodes ──
     if (nd.highlight) {
       const pulse = Math.sin(nd.pulse || 0);
+      const ring  = 5 + 3 * pulse;
       ctx.save();
+      roundRect(nx - ring, ny - ring, nw + ring * 2, nh + ring * 2, NODE_R + ring);
       ctx.strokeStyle = c.stroke;
-      ctx.globalAlpha = 0.22 + 0.13 * pulse;
-      ctx.lineWidth = 2;
-      ctx.save();
-      ctx.translate(nd.x, nd.y);
-      ctx.scale(1 + 0.12 + 0.06 * pulse, 1 + 0.12 + 0.06 * pulse);
-      ctx.translate(-nd.x, -nd.y);
-      buildPath();
-      ctx.restore();
+      ctx.lineWidth   = 2;
+      ctx.globalAlpha = 0.18 + 0.12 * pulse;
       ctx.stroke();
       ctx.restore();
     }
 
+    // ── Drop shadow ──
     ctx.save();
-    if (isSel) { ctx.shadowColor = c.stroke; ctx.shadowBlur = 14; }
-    buildPath();
+    ctx.shadowColor   = isSel ? c.stroke : 'rgba(0,0,0,0.15)';
+    ctx.shadowBlur    = isSel ? 18 : 7;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = isSel ? 0 : 3;
+
+    // Main box body
+    roundRect(nx, ny, nw, nh, NODE_R);
     ctx.fillStyle = c.fill;
     ctx.fill();
+    ctx.restore();
+
+    // ── Main border ──
+    ctx.save();
+    roundRect(nx, ny, nw, nh, NODE_R);
     ctx.strokeStyle = c.stroke;
-    ctx.lineWidth = (isSel || nd.highlight) ? 2.5 : 1.2;
+    ctx.lineWidth   = isSel ? 2.2 : 1.3;
     ctx.stroke();
     ctx.restore();
 
-    if (nd.linkedToCeiling || nd.linkedToFloor) {
+    // ── Top accent stripe (colored band) ──
+    ctx.save();
+    roundRect(nx, ny, nw, ACCENT_H, [NODE_R, NODE_R, 0, 0]);
+    ctx.fillStyle = c.stroke;
+    ctx.fill();
+    ctx.restore();
+
+    // ── Separator line before badge zone ──
+    if (nd.hasBadges) {
       ctx.save();
-      ctx.font = 'bold 9px DM Mono, monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const marks = [];
-      if (nd.linkedToCeiling) marks.push({ label: 'C', color: '#d4450c' });
-      if (nd.linkedToFloor) marks.push({ label: 'F', color: '#1d5bbf' });
-      marks.forEach((m, i) => {
-        const ox = (marks.length === 2 ? (i === 0 ? -6 : 6) : 0);
-        ctx.fillStyle = m.color;
-        ctx.fillText(m.label, nd.x + ox, nd.y + 11);
-      });
+      ctx.strokeStyle = c.stroke;
+      ctx.globalAlpha = 0.18;
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      ctx.moveTo(nx + 6, ny + LABEL_ZONE);
+      ctx.lineTo(nx + nw - 6, ny + LABEL_ZONE);
+      ctx.stroke();
       ctx.restore();
     }
 
+    // ── Label text (vertically centered in label zone) ──
     ctx.save();
-    ctx.font = '500 12px sans-serif';
-    ctx.textAlign = 'center';
+    ctx.font         = LABEL_FONT;
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = c.text;
-    ctx.fillText(nd.label, nd.x, nd.y - 4);
+    ctx.fillStyle    = c.text;
+    ctx.fillText(nd.label, nd.x, ny + ACCENT_H + (LABEL_ZONE - ACCENT_H) / 2);
     ctx.restore();
+
+    // ── C / F badge pills in badge zone ──
+    if (nd.hasBadges) {
+      const badges = [];
+      if (nd.linkedToCeiling) badges.push({ label: 'C', stroke: '#d4450c', fill: '#fdeee8', text: '#b03308' });
+      if (nd.linkedToFloor)   badges.push({ label: 'F', stroke: '#1d5bbf', fill: '#e8effe', text: '#0e3275' });
+
+      const gap        = 5;
+      const totalBadge = badges.length * BADGE_W + (badges.length - 1) * gap;
+      let bx           = nd.x - totalBadge / 2;
+      const by         = ny + LABEL_ZONE + BADGE_ZONE / 2;
+
+      badges.forEach(b => {
+        ctx.save();
+        roundRect(bx, by - BADGE_H / 2, BADGE_W, BADGE_H, BADGE_R);
+        ctx.fillStyle   = b.fill;
+        ctx.fill();
+        ctx.strokeStyle = b.stroke;
+        ctx.lineWidth   = 1;
+        ctx.stroke();
+        ctx.font         = '600 8px "Geist Mono", ui-monospace, monospace';
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle    = b.text;
+        ctx.fillText(b.label, bx + BADGE_W / 2, by);
+        ctx.restore();
+        bx += BADGE_W + gap;
+      });
+    }
   });
 
   if (!nodes.length) {
@@ -841,8 +899,8 @@ document.getElementById('reset-btn2').addEventListener('click', resetAll);
 
 function nodeAt(x, y) {
   return nodes.slice().reverse().find(nd => {
-    const hw = (nd.w || 60) / 2;
-    const hh = (nd.h || 42) / 2;
+    const hw = (nd.w || 64) / 2;
+    const hh = (nd.h || 30) / 2;
     return Math.abs(x - nd.x) <= hw && Math.abs(y - nd.y) <= hh;
   });
 }
@@ -870,8 +928,8 @@ canvas.addEventListener('mousedown', e => {
 canvas.addEventListener('mousemove', e => {
   const p = getPos(e);
   if (dragging) {
-    dragging.x = Math.max(30, Math.min(W - 30, p.x - dragOff.x));
-    dragging.y = Math.max(30, Math.min(H - 30, p.y - dragOff.y));
+    dragging.x = Math.max(dragging.w / 2 + 4, Math.min(W - dragging.w / 2 - 4, p.x - dragOff.x));
+    dragging.y = Math.max(dragging.h / 2 + 4, Math.min(H - dragging.h / 2 - 4, p.y - dragOff.y));
   } else {
     canvas.style.cursor = nodeAt(p.x, p.y) ? 'grab' : 'default';
   }

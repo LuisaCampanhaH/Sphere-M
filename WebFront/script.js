@@ -538,12 +538,21 @@ Considere esse contexto ao interpretar os elementos abaixo.
 
 Determine se há uma relação entre "${labelGi}" e "${labelEi}". Se houver, descreva a relação.`;
 
+  const apiKey = window.APP_CONFIG?.MISTRAL_API_KEY;
+  if (!apiKey) {
+    console.error(
+      'MISTRAL_API_KEY não configurada. Copie WebFront/config.example.js para ' +
+      'WebFront/config.js e preencha sua chave (config.js não é versionado).'
+    );
+    return null;
+  }
+
   try {
     const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer YqO39pccm4tnqUNQMiRqJXUypPCZPjoM',
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: 'mistral-medium-latest',

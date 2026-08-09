@@ -52,6 +52,9 @@ function createNode(label, group, x, y) {
     highlight: false, pulse: 0,
     linkedToCeiling: false,
     linkedToFloor: false,
+    // ── Dupla tag (extensão da IC) ──
+    tagNatureza: null,  // 'Classe' | 'Objeto' | null
+    tagCaminho: null,   // 'positivo' | 'negativo' | 'ambos' | null
   };
   nodes.push(node);
   return node;
@@ -106,6 +109,47 @@ function propagateMarks() {
   }
 }
 
+// ── Dupla tag: natureza (Classe/Objeto) + caminho (positivo/negativo/ambos) ──
+//
+// tagNatureza NÃO se propaga: é uma característica do próprio elemento
+// (Classe = conceito geral, Objeto = ocorrência concreta), decidida
+// diretamente pelo humano no editor do nó.
+//
+// tagCaminho SE propaga -- na MESMA direção usada por linkedToFloor
+// (edges.filter(e => e.from === cur)), porque a tag nasce nos nós FLOOR
+// (ex: Morte/Sobrevivência) e sobe pela cadeia até quem leva até eles.
+// Usar as duas direções ao mesmo tempo (como numa primeira tentativa)
+// faz qualquer grafo bem conectado colapsar tudo para "ambos" quase de
+// imediato -- inclusive os próprios FLOORs originais -- destruindo a
+// distinção que a tag deveria oferecer.
+
+function combineCaminho(atual, novo) {
+  if (!novo) return atual;
+  if (!atual) return novo;
+  if (atual === novo) return atual;
+  return 'ambos';
+}
+
+function propagatePathTag() {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    nodes.forEach(nd => {
+      if (!nd.tagCaminho) return;
+      const neighbors = edges.filter(e => e.from === nd.id).map(e => e.to);
+      neighbors.forEach(nbId => {
+        const nb = nodes.find(n => n.id === nbId);
+        if (!nb) return;
+        const combinado = combineCaminho(nb.tagCaminho, nd.tagCaminho);
+        if (combinado !== nb.tagCaminho) {
+          nb.tagCaminho = combinado;
+          changed = true;
+        }
+      });
+    });
+  }
+}
+
 // ── Poda: remove qualquer nó sem C+F simultâneo, exceto teto e piso ──
 // Roda em loop até estabilizar, pois remover um nó pode desancorar vizinhos.
 // Chamada automaticamente pelo botão "encerrar".
@@ -113,6 +157,7 @@ function executePoda() {
   let changed = true;
   while (changed) {
     propagateMarks();
+    propagatePathTag();
     const toRemove = nodes
       .filter(nd =>
         nd.group !== 'teto' &&
@@ -351,8 +396,9 @@ function draw() {
     // ── Main border ──
     ctx.save();
     roundRect(nx, ny, nw, nh, NODE_R);
-    ctx.strokeStyle = c.stroke;
-    ctx.lineWidth   = isSel ? 2.2 : 1.3;
+    const corBordaTag = COR_CAMINHO[nd.tagCaminho];
+    ctx.strokeStyle = corBordaTag || c.stroke;
+    ctx.lineWidth   = corBordaTag ? 3 : (isSel ? 2.2 : 1.3);
     ctx.stroke();
     ctx.restore();
 
@@ -412,6 +458,18 @@ function draw() {
         ctx.restore();
         bx += BADGE_W + gap;
       });
+    }
+
+    // ── Selo de natureza (Classe/Objeto) — extensão da IC ──
+    if (nd.tagNatureza) {
+      ctx.save();
+      ctx.font = '600 10px "Geist Mono", ui-monospace, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = c.stroke;
+      const simbolo = nd.tagNatureza === 'Classe' ? '■' : '●';
+      ctx.fillText(simbolo, nx + nw - 10, ny + 10);
+      ctx.restore();
     }
   });
 
@@ -635,6 +693,7 @@ async function updatePairUI() {
   // ── Fim da rodada ──────────────────────────────────────────────
   if (pairIdx >= GE.length) {
     propagateMarks();
+    propagatePathTag();
 
     G = new Set(tempG);
     tempG = new Set();
@@ -957,6 +1016,13 @@ canvas.addEventListener('mouseleave', () => { dragging = null; });
 
 let editingNode = null;
 let nodeEditInput = null;
+let nodeTagPanel = null;
+
+const COR_CAMINHO = {
+  positivo: '#0a8f3c',
+  negativo: '#c1121f',
+  ambos: '#6a2ca5',
+};
 
 function startNodeEdit(node) {
   if (editingNode) commitNodeEdit();
@@ -989,11 +1055,61 @@ function startNodeEdit(node) {
   document.body.appendChild(nodeEditInput);
   nodeEditInput.select();
 
+  // ── Painel de tags (natureza + caminho) — extensão da IC ──
+  nodeTagPanel = document.createElement('div');
+  nodeTagPanel.style.position = 'fixed';
+  nodeTagPanel.style.left = nodeEditInput.style.left;
+  nodeTagPanel.style.top  = (rect.top + (node.y - node.h / 2) * scaleY + 30) + 'px';
+  nodeTagPanel.style.width = Math.max(node.w * scaleX, 150) + 'px';
+  nodeTagPanel.style.display = 'flex';
+  nodeTagPanel.style.gap = '4px';
+  nodeTagPanel.style.zIndex = '9999';
+  nodeTagPanel.style.background = '#fff';
+  nodeTagPanel.style.border = '1px solid #ccc';
+  nodeTagPanel.style.borderRadius = '4px';
+  nodeTagPanel.style.padding = '3px';
+  nodeTagPanel.style.boxShadow = '0 2px 8px rgba(0,0,0,0.18)';
+
+  const selNatureza = document.createElement('select');
+  selNatureza.title = 'Tag de natureza';
+  selNatureza.style.font = '11px "Geist Mono", ui-monospace, monospace';
+  selNatureza.style.flex = '1';
+  [['', '— natureza'], ['Classe', 'Classe'], ['Objeto', 'Objeto']].forEach(([v, t]) => {
+    const opt = document.createElement('option');
+    opt.value = v; opt.textContent = t;
+    if (node.tagNatureza === v || (!node.tagNatureza && v === '')) opt.selected = true;
+    selNatureza.appendChild(opt);
+  });
+
+  const selCaminho = document.createElement('select');
+  selCaminho.title = 'Tag de caminho';
+  selCaminho.style.font = '11px "Geist Mono", ui-monospace, monospace';
+  selCaminho.style.flex = '1';
+  [['', '— caminho'], ['positivo', 'positivo'], ['negativo', 'negativo'], ['ambos', 'ambos']].forEach(([v, t]) => {
+    const opt = document.createElement('option');
+    opt.value = v; opt.textContent = t;
+    if (node.tagCaminho === v || (!node.tagCaminho && v === '')) opt.selected = true;
+    selCaminho.appendChild(opt);
+  });
+
+  nodeTagPanel.appendChild(selNatureza);
+  nodeTagPanel.appendChild(selCaminho);
+  document.body.appendChild(nodeTagPanel);
+  nodeTagPanel._selNatureza = selNatureza;
+  nodeTagPanel._selCaminho = selCaminho;
+
   nodeEditInput.addEventListener('keydown', e => {
     if (e.key === 'Enter')  { e.preventDefault(); commitNodeEdit(); }
     if (e.key === 'Escape') { e.preventDefault(); cancelNodeEdit(); }
   });
-  nodeEditInput.addEventListener('blur', () => commitNodeEdit());
+  nodeEditInput.addEventListener('blur', () => {
+    // pequeno atraso para permitir clique nos selects sem fechar o editor antes da hora
+    setTimeout(() => {
+      if (document.activeElement !== selNatureza && document.activeElement !== selCaminho) {
+        commitNodeEdit();
+      }
+    }, 150);
+  });
 }
 
 function commitNodeEdit() {
@@ -1017,6 +1133,18 @@ function commitNodeEdit() {
     }
     seenPairs = updatedPairs;
   }
+
+  // ── Salva as tags escolhidas (extensão da IC) ──
+  if (nodeTagPanel) {
+    const novaNatureza = nodeTagPanel._selNatureza.value || null;
+    const novoCaminho  = nodeTagPanel._selCaminho.value || null;
+    editingNode.tagNatureza = novaNatureza;
+    editingNode.tagCaminho  = novoCaminho;
+    propagatePathTag();
+    nodeTagPanel.remove();
+    nodeTagPanel = null;
+  }
+
   nodeEditInput.remove();
   nodeEditInput = null;
   editingNode = null;
@@ -1025,6 +1153,7 @@ function commitNodeEdit() {
 
 function cancelNodeEdit() {
   if (nodeEditInput) { nodeEditInput.remove(); nodeEditInput = null; }
+  if (nodeTagPanel) { nodeTagPanel.remove(); nodeTagPanel = null; }
   editingNode = null;
   draw();
 }

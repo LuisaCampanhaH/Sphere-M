@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sphere-M</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@300;400;500&family=Geist:wght@300;400;500;600&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <div id="app">
+
+    <!-- ── Canvas (esquerda) ── -->
+    <div id="canvas-side">
+      <div id="canvas-wrap">
+        <canvas id="graph-canvas"></canvas>
+        <div id="canvas-overlay-hint">drag · duplo clique para editar · delete</div>
+      </div>
+    </div>
+
+    <!-- ── Sidebar (direita) ── -->
+    <div id="sidebar">
+
+      <!-- Header -->
+      <div id="sidebar-header">
+        <div id="header-top">
+          <div id="logo-block">
+            <span id="logo-title">Sphere<em>-M</em></span>
+            <span id="logo-sub">ontology capture</span>
+          </div>
+          <button id="theme-toggle" title="Alternar tema" aria-label="Alternar tema claro/escuro">
+            <span id="theme-icon">☽</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="sidebar-body">
+
+        <!-- Fase 1 -->
+        <div id="phase1-panel">
+          <div class="section-label">
+            <span class="section-label-num">01</span>
+            Definir grupos
+          </div>
+
+          <div class="field-group">
+            <label>
+              <span class="label-chip teto">teto</span>
+            </label>
+            <input type="text" id="input-teto" placeholder="ex: diabetes, insulina" />
+          </div>
+
+          <div class="field-group">
+            <label>
+              <span class="label-chip piso">piso</span>
+            </label>
+            <input type="text" id="input-piso" placeholder="ex: açúcar, glicose" />
+          </div>
+
+          <div class="field-group">
+            <label>
+              <span class="label-chip rel">relacionados</span>
+              <span class="label-optional">opcional</span>
+            </label>
+            <input type="text" id="input-rel" placeholder="ex: dieta, exercício" />
+          </div>
+
+          <div class="actions">
+            <button id="start-btn" class="btn-primary">
+              <span>Gerar grafo</span>
+              <span class="btn-icon">→</span>
+            </button>
+            <button id="reset-btn" class="btn-ghost">Limpar tudo</button>
+          </div>
+        </div>
+
+        <!-- Fase 2 -->
+        <div id="phase2-panel">
+          <div id="phase2-header">
+            <div class="section-label" style="margin-bottom:0">
+              <span class="section-label-num">02</span>
+              Conexões
+            </div>
+            <button id="stop-btn" class="btn-stop">⏹ encerrar</button>
+          </div>
+
+          <!-- Progress -->
+          <div id="pair-status">
+            <span id="pair-counter">—</span>
+            <div id="progress-bar-wrap">
+              <div id="progress-bar" style="width:0%"></div>
+            </div>
+          </div>
+
+          <!-- Already connected -->
+          <div id="already-connected-msg">
+            <span class="badge-connected">✓ conectados</span>
+            <span id="already-connected-path"></span>
+          </div>
+
+          <!-- Pair prompt -->
+          <div id="pair-prompt">
+            <span class="pair-node" id="node-a-label">A</span>
+            <span class="pair-arrow">↔</span>
+            <span class="pair-node" id="node-b-label">B</span>
+          </div>
+
+          <!-- Bloco da IA -->
+          <div id="ai-block">
+            <div id="ai-idle">
+              <span id="ai-idle-icon">⬡</span>
+              <span id="ai-idle-text">A IA vai analisar o par quando ele aparecer</span>
+            </div>
+
+            <div id="ai-loading" style="display:none">
+              <span class="ai-spinner"></span>
+              <span>Consultando IA…</span>
+            </div>
+
+            <div id="ai-result" style="display:none">
+              <div id="ai-result-header">
+                <span id="ai-result-icon">◈</span>
+                <span id="ai-result-label">Análise ontológica</span>
+                <span id="ai-relation-badge"></span> <!-- Relação encontrada ou Sem relação -->
+              </div>
+              <p id="ai-result-text"></p>
+            </div>
+
+            <div id="ai-error" style="display:none">
+              <span>⚠ Falha na API — analise o par manualmente.</span>
+              <button id="ai-retry-btn">Tentar novamente</button>
+            </div>
+          </div>
+
+          <!-- Instrução contextual (aparece só quando há resposta da IA) -->
+          <p id="ai-hint" style="display:none">
+            Leia o texto acima e extraia abaixo as palavras que conectam os dois elementos.
+          </p>
+
+
+          <input type="text" id="input-meio" placeholder="palavra(s) do meio — vírgula para vários" />
+
+          <div id="phase2-actions">
+            <div class="btn-row">
+              <button id="confirm-btn" class="btn-primary btn-row-main">
+                <span>Confirmar</span>
+              </button>
+              <button id="skip-btn" class="btn-ghost btn-row-skip">Pular →</button>
+            </div>
+            <button id="reset-btn2" class="btn-restart btn-ghost">← Recomeçar</button>
+          </div>
+
+          <!-- Rodada concluída -->
+          <div id="done-msg">
+            <div class="done-icon">✓</div>
+            <div class="done-text">Rodada <span id="round-num">1</span> concluída</div>
+            <button id="next-round-btn" class="btn-success">Nova rodada →</button>
+          </div>
+
+          <!-- Grafo completo -->
+          <div id="complete-msg">
+            <div id="complete-banner">
+              <span id="complete-icon">🕸️</span>
+              <div>
+                <div id="complete-title">Grafo completo</div>
+                <div id="complete-sub">Todos os nós estão ancorados em teto e piso.</div>
+              </div>
+            </div>
+            <div id="complete-actions">
+              <button id="continue-btn">Aprofundar grafo →</button>
+              <button id="finish-btn">Encerrar</button>
+            </div>
+          </div>
+
+          <!-- Encerrado -->
+          <div id="finished-msg">
+            <div class="finished-inner">
+              <span class="badge-finished">ENCERRADO</span>
+              <span class="finished-text">grafo pronto para visualização</span>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /sidebar-body -->
+
+      <!-- Legend -->
+      <div id="legend">
+        <div class="legend-title">legenda</div>
+        <div class="legend-grid">
+          <div class="legend-item">
+            <span class="legend-dot" style="background:var(--teto);"></span>teto
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot" style="background:var(--piso);"></span>piso
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot" style="background:var(--rel);"></span>relacionado
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot" style="background:var(--meio);"></span>meio
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /sidebar -->
+
+  </div>
+  <script src="config.js"></script>
+  <script src="script.js"></script>
+</body>
+
+</html>

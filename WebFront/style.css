@@ -718,6 +718,71 @@ button:active { transform: scale(0.98); }
   opacity: 0.85;
 }
 
+/* ── Auditoria da tag de caminho ─────────────── */
+#tag-audit {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+  transition: background 0.3s, border-color 0.3s;
+}
+
+.audit-empty {
+  font-family: 'Geist Mono', monospace;
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+}
+
+.audit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  transition: color 0.3s;
+}
+
+.audit-row b {
+  color: var(--text);
+}
+
+.audit-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.audit-desq {
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+
+.audit-desq-alert b {
+  color: #c1121f;
+}
+
+.audit-list {
+  display: block;
+  margin-top: 6px;
+  font-size: 9px;
+}
+
+.audit-list ul {
+  margin: 4px 0 0;
+  padding-left: 14px;
+}
+
+.audit-list li {
+  color: var(--text);
+  line-height: 1.5;
+}
+
 /* Bloco da IA */
  
 #ai-block {

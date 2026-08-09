@@ -115,13 +115,25 @@ function propagateMarks() {
 // (Classe = conceito geral, Objeto = ocorrência concreta), decidida
 // diretamente pelo humano no editor do nó.
 //
-// tagCaminho SE propaga -- na MESMA direção usada por linkedToFloor
-// (edges.filter(e => e.from === cur)), porque a tag nasce nos nós FLOOR
-// (ex: Morte/Sobrevivência) e sobe pela cadeia até quem leva até eles.
-// Usar as duas direções ao mesmo tempo (como numa primeira tentativa)
-// faz qualquer grafo bem conectado colapsar tudo para "ambos" quase de
-// imediato -- inclusive os próprios FLOORs originais -- destruindo a
-// distinção que a tag deveria oferecer.
+// tagCaminho TAMBÉM NÃO se propaga mais pelo grafo. Isso era um bug de
+// desenho, não um detalhe de implementação: testamos (fora desta UI, num
+// script Python à parte, comparando lado a lado) inundar a tag de caminho
+// pelo grafo -- do mesmo jeito que linkedToCeiling/linkedToFloor já fazem
+// -- contra deixar a tag existir só onde o humano a atribui diretamente.
+//
+// A inundação (mesmo numa única direção, como estava aqui antes) contamina
+// nós que não têm papel causal nenhum: um nó que é só ancestral taxonômico
+// de um elemento "positivo" e de um "negativo" virava "ambos" mesmo sem
+// nenhuma relação real de causa com nenhum dos dois desfechos -- e um nó
+// perto de um único vizinho "positivo" virava "positivo" mesmo sem
+// ninguém ter dito isso sobre ele. É a mesma razão pela qual reaproveitar
+// achou_teto/achou_piso não serve aqui: alcançabilidade na árvore
+// taxonômica não é o mesmo que "contribui causalmente para esse desfecho".
+//
+// A tag de caminho, portanto, só existe onde o humano a colocou (duplo
+// clique no nó → seletor de caminho). Não há propagação automática.
+// "Ambos" só aparece se o próprio humano escolher essa opção para aquele
+// nó específico -- não como resultado de estar perto dos dois lados.
 
 function combineCaminho(atual, novo) {
   if (!novo) return atual;
@@ -130,24 +142,12 @@ function combineCaminho(atual, novo) {
   return 'ambos';
 }
 
+// Não propaga mais nada -- existe só para não quebrar as chamadas
+// existentes (executePoda, fim de rodada, commit do editor de nó).
+// Mantido como no-op explícito, e não removido, para deixar rastreável
+// no histórico por que a inundação foi descontinuada.
 function propagatePathTag() {
-  let changed = true;
-  while (changed) {
-    changed = false;
-    nodes.forEach(nd => {
-      if (!nd.tagCaminho) return;
-      const neighbors = edges.filter(e => e.from === nd.id).map(e => e.to);
-      neighbors.forEach(nbId => {
-        const nb = nodes.find(n => n.id === nbId);
-        if (!nb) return;
-        const combinado = combineCaminho(nb.tagCaminho, nd.tagCaminho);
-        if (combinado !== nb.tagCaminho) {
-          nb.tagCaminho = combinado;
-          changed = true;
-        }
-      });
-    });
-  }
+  // intencionalmente vazio — ver comentário acima
 }
 
 // ── Poda: remove qualquer nó sem C+F simultâneo, exceto teto e piso ──
@@ -157,7 +157,6 @@ function executePoda() {
   let changed = true;
   while (changed) {
     propagateMarks();
-    propagatePathTag();
     const toRemove = nodes
       .filter(nd =>
         nd.group !== 'teto' &&
@@ -178,6 +177,70 @@ function executePoda() {
 
 function isGraphComplete() {
   return nodes.every(nd => nd.linkedToCeiling && nd.linkedToFloor);
+}
+
+// ── Auditoria da tag de caminho ──────────────────────────────
+// Só olha o que já está marcado diretamente nos nós (sem inundar nada).
+// Serve pra responder na hora as duas perguntas que ficaram em aberto:
+//   1) uma Classe tende sempre a virar "ambos"? (audita por natureza)
+//   2) os dois caminhos (positivo/negativo) estão equilibrados,
+//      ou alguém está só listando fatores de um lado só?
+function auditTags() {
+  const contagem = { positivo: 0, negativo: 0, ambos: 0, semTag: 0 };
+  const ambosPorNatureza = { Classe: [], Objeto: [], semNatureza: [] };
+
+  nodes.forEach(nd => {
+    if (nd.tagCaminho === 'positivo') contagem.positivo++;
+    else if (nd.tagCaminho === 'negativo') contagem.negativo++;
+    else if (nd.tagCaminho === 'ambos') contagem.ambos++;
+    else contagem.semTag++;
+
+    if (nd.tagCaminho === 'ambos') {
+      const chave = nd.tagNatureza || 'semNatureza';
+      ambosPorNatureza[chave].push(nd.label);
+    }
+  });
+
+  const { positivo, negativo } = contagem;
+  const desequilibrio = (positivo + negativo) > 0
+    ? Math.abs(positivo - negativo) / (positivo + negativo)
+    : null;
+
+  return { contagem, desequilibrio, ambosPorNatureza };
+}
+
+function renderAuditPanel() {
+  const el = document.getElementById('tag-audit-panel');
+  if (!el) return;
+
+  const { contagem, desequilibrio, ambosPorNatureza } = auditTags();
+  const totalMarcados = contagem.positivo + contagem.negativo + contagem.ambos;
+
+  if (!totalMarcados) {
+    el.innerHTML = `<div class="audit-empty">nenhum nó com tag de caminho ainda — duplo clique num nó pra marcar</div>`;
+    return;
+  }
+
+  const desqStr = desequilibrio === null ? '—' : desequilibrio.toFixed(2);
+  const desqAlerta = desequilibrio !== null && desequilibrio > 0.4;
+
+  let html = `
+    <div class="audit-row"><span class="audit-dot" style="background:${COR_CAMINHO.positivo}"></span>positivo: <b>${contagem.positivo}</b></div>
+    <div class="audit-row"><span class="audit-dot" style="background:${COR_CAMINHO.negativo}"></span>negativo: <b>${contagem.negativo}</b></div>
+    <div class="audit-row"><span class="audit-dot" style="background:${COR_CAMINHO.ambos}"></span>ambos: <b>${contagem.ambos}</b></div>
+    <div class="audit-row audit-desq${desqAlerta ? ' audit-desq-alert' : ''}">
+      desequilíbrio pos/neg: <b>${desqStr}</b>${desqAlerta ? ' ⚠ possível viés' : ''}
+    </div>`;
+
+  const classesAmbos = ambosPorNatureza.Classe;
+  if (classesAmbos.length) {
+    html += `<div class="audit-row audit-list">
+      <span>classes marcadas "ambos" (revisar se é papel duplo real):</span>
+      <ul>${classesAmbos.map(l => `<li>${l}</li>`).join('')}</ul>
+    </div>`;
+  }
+
+  el.innerHTML = html;
 }
 
 // ── Conjuntos: geração de pares GE ────────────────────────
@@ -693,7 +756,7 @@ async function updatePairUI() {
   // ── Fim da rodada ──────────────────────────────────────────────
   if (pairIdx >= GE.length) {
     propagateMarks();
-    propagatePathTag();
+    renderAuditPanel();
 
     G = new Set(tempG);
     tempG = new Set();
@@ -957,6 +1020,7 @@ function resetAll() {
   document.getElementById('input-teto').value = '';
   document.getElementById('input-piso').value = '';
   document.getElementById('input-rel').value = '';
+  renderAuditPanel();
   draw();
 }
 
@@ -1140,7 +1204,6 @@ function commitNodeEdit() {
     const novoCaminho  = nodeTagPanel._selCaminho.value || null;
     editingNode.tagNatureza = novaNatureza;
     editingNode.tagCaminho  = novoCaminho;
-    propagatePathTag();
     nodeTagPanel.remove();
     nodeTagPanel = null;
   }
@@ -1148,6 +1211,7 @@ function commitNodeEdit() {
   nodeEditInput.remove();
   nodeEditInput = null;
   editingNode = null;
+  renderAuditPanel();
   draw();
 }
 
@@ -1177,4 +1241,5 @@ document.addEventListener('keydown', e => {
   }
 });
 
+renderAuditPanel();
 draw();

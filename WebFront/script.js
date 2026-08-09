@@ -8,11 +8,60 @@ let sessionId = 0;
 
 // resize handler
 window.addEventListener('resize', () => {
+  const oldW = W, oldH = H;
   W = canvas.parentElement.clientWidth;
   H = canvas.parentElement.clientHeight;
   canvas.width = W;
   canvas.height = H;
+  rescaleNodesToCanvas(oldW, oldH);
   draw();
+});
+
+// Reposiciona proporcionalmente todos os nós quando o canvas muda de
+// tamanho (ex: janela redimensionada, sidebar abriu/fechou, ou a medição
+// inicial do canvas foi feita antes do layout da página estabilizar).
+// Sem isso, nós antigos ficam com coordenadas de um canvas que não existe
+// mais e podem acabar fora da área visível (o #canvas-wrap tem
+// overflow:hidden, então "fora" quer dizer literalmente invisível).
+function rescaleNodesToCanvas(oldW, oldH) {
+  if (!oldW || !oldH || !W || !H) return;
+  if (oldW === W && oldH === H) return;
+  nodes.forEach(nd => {
+    nd.x = nd.x / oldW * W;
+    nd.y = nd.y / oldH * H;
+  });
+  clampNodesToCanvas();
+}
+
+// Garante que nenhum nó fique fora dos limites atuais do canvas.
+// Chamado tanto no resize quanto no início de todo draw(), como rede de
+// segurança independente de qual código gerou a posição do nó.
+function clampNodesToCanvas() {
+  nodes.forEach(nd => {
+    const hw = (nd.w || 64) / 2;
+    const hh = (nd.h || 30) / 2;
+    if (W > hw * 2 + 8) {
+      nd.x = Math.max(hw + 4, Math.min(W - hw - 4, nd.x));
+    }
+    if (H > hh * 2 + 8) {
+      nd.y = Math.max(hh + 4, Math.min(H - hh - 4, nd.y));
+    }
+  });
+}
+
+// Re-mede o canvas logo depois do load completo (fontes, etc.) para
+// corrigir qualquer medição inicial feita antes do layout estabilizar.
+window.addEventListener('load', () => {
+  const oldW = W, oldH = H;
+  const freshW = canvas.parentElement.clientWidth;
+  const freshH = canvas.parentElement.clientHeight;
+  if (freshW && freshH && (freshW !== W || freshH !== H)) {
+    W = freshW; H = freshH;
+    canvas.width = W;
+    canvas.height = H;
+    rescaleNodesToCanvas(oldW, oldH);
+    draw();
+  }
 });
 
 let nodes = [], edges = [], selected = null, dragging = null;
@@ -361,6 +410,7 @@ function startSim(steps = 300) {
 // ── Desenhar ─────────────────────────────────────────────
 
 function draw() {
+  clampNodesToCanvas();
   ctx.clearRect(0, 0, W, H);
 
   ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--canvas-dot').trim() || 'rgba(0,0,0,0.06)';

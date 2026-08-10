@@ -458,12 +458,31 @@ function draw() {
   }
 
   // ── Draw edges ──────────────────────────────────────────────
+  // Se algum dos dois nós da aresta tem tag de caminho (positivo/negativo/
+  // ambos), a linha herda essa cor — assim dá pra ver o trajeto colorido
+  // pelo grafo, não só a borda do nó isolado. Sem tag em nenhum dos dois
+  // lados, fica na cor neutra de sempre.
   edges.forEach(e => {
     const a = nodes.find(n => n.id === e.from), b = nodes.find(n => n.id === e.to);
     if (!a || !b) return;
     ctx.save();
-    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--edge-color').trim() || 'rgba(0,0,0,0.14)';
-    ctx.lineWidth = 1.5;
+
+    const tagA = a.tagCaminho, tagB = b.tagCaminho;
+    let edgeColor = getComputedStyle(document.documentElement).getPropertyValue('--edge-color').trim() || 'rgba(0,0,0,0.14)';
+    let edgeWidth = 1.5;
+
+    if (tagA && tagB && tagA !== tagB) {
+      // extremidades com tags diferentes — trata como "ambos" pra não
+      // sugerir uma cor só e esconder o conflito
+      edgeColor = COR_CAMINHO.ambos;
+      edgeWidth = 2.5;
+    } else if (tagA || tagB) {
+      edgeColor = COR_CAMINHO[tagA || tagB];
+      edgeWidth = 2.5;
+    }
+
+    ctx.strokeStyle = edgeColor;
+    ctx.lineWidth = edgeWidth;
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
@@ -697,6 +716,11 @@ const TIPOS_AOF = [
   'é-um-atributo-de', 'é-um-componente-de', 'é-um-elemento-de', 'é-caracterizado-por',
 ];
 
+// Notas de desambiguação do domínio — termos que a IA poderia interpretar
+// errado por causa de outros sentidos mais comuns na língua. Editar aqui
+// se o domínio mudar ou surgirem novas ambiguidades.
+const DOMAIN_NOTES = `- "Natal", "pré-natal" e "pós-natal" aqui se referem ao contexto de mortalidade/natalidade (gravidez, parto, período neonatal) — NUNCA ao feriado de Natal (25 de dezembro). Trate esses termos exclusivamente como fases do ciclo gestacional/perinatal.`;
+
 async function callAI(labelGi, labelEi) {
   // Contexto do domínio: só os outros elementos, sem repetir o par atual
   // (evita poluir o prompt e enviesar a IA a puxar relação com o próprio par).
@@ -729,7 +753,10 @@ Regras de conteúdo:
 - Não invente relações fracas, genéricas ou forçadas só para preencher a resposta. Se a relação exigir mais de um passo intermediário óbvio ou for artificial, responda RELAÇÃO: NÃO.
 - O CONCEITO_MEIO deve ser um substantivo ou expressão curta, nunca uma frase.
 - Use os outros elementos do domínio apenas como contexto de fundo, não force conexão com eles.
-- Conceitos de meio já usados em outros pares deste grafo: ${meiosStr}. NÃO repita nenhum desses como CONCEITO_MEIO — proponha um termo diferente, específico pra esse par. Só repita um termo já usado se ele for literalmente o mesmo conceito exato (não apenas parecido), o que é raro.`;
+- Conceitos de meio já usados em outros pares deste grafo: ${meiosStr}. NÃO repita nenhum desses como CONCEITO_MEIO — proponha um termo diferente, específico pra esse par. Só repita um termo já usado se ele for literalmente o mesmo conceito exato (não apenas parecido), o que é raro.
+
+Notas de desambiguação do domínio (importante seguir à risca):
+${DOMAIN_NOTES}`;
 
   const userPrompt = `Domínio: ${domainContext || '(sem outros elementos ainda)'}
 

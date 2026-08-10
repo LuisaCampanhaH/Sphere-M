@@ -702,6 +702,15 @@ async function callAI(labelGi, labelEi) {
   // (evita poluir o prompt e enviesar a IA a puxar relação com o próprio par).
   const domainContext = [...E].filter(el => el !== labelGi && el !== labelEi).join(', ');
 
+  // Conceitos de meio já criados em pares anteriores — passados à parte
+  // (não só misturados no domínio geral) pra IA saber explicitamente que
+  // não deve repetir esses termos como sugestão nova, salvo se for
+  // genuinamente o mesmo conceito de novo.
+  const meiosExistentes = nodes
+    .filter(nd => nd.group === 'meio')
+    .map(nd => nd.label);
+  const meiosStr = meiosExistentes.length ? meiosExistentes.join(', ') : '(nenhum ainda)';
+
   const systemPrompt = `Você é um ontólogo aplicando o método Sphere-M de construção de grafos de conhecimento.
 
 O método conecta dois conceitos ("${labelGi}" e "${labelEi}") através de um único CONCEITO INTERMEDIÁRIO (o "meio"), usando relações do tipo AOF:
@@ -719,7 +728,8 @@ JUSTIFICATIVA: <1 a 2 frases, direto, sem introduções como "com certeza" ou "�
 Regras de conteúdo:
 - Não invente relações fracas, genéricas ou forçadas só para preencher a resposta. Se a relação exigir mais de um passo intermediário óbvio ou for artificial, responda RELAÇÃO: NÃO.
 - O CONCEITO_MEIO deve ser um substantivo ou expressão curta, nunca uma frase.
-- Use os outros elementos do domínio apenas como contexto de fundo, não force conexão com eles.`;
+- Use os outros elementos do domínio apenas como contexto de fundo, não force conexão com eles.
+- Conceitos de meio já usados em outros pares deste grafo: ${meiosStr}. NÃO repita nenhum desses como CONCEITO_MEIO — proponha um termo diferente, específico pra esse par. Só repita um termo já usado se ele for literalmente o mesmo conceito exato (não apenas parecido), o que é raro.`;
 
   const userPrompt = `Domínio: ${domainContext || '(sem outros elementos ainda)'}
 
@@ -745,7 +755,7 @@ Par a analisar: "${labelGi}" e "${labelEi}".`;
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'mistral-small-latest',
+        model: 'ministral-8b-latest',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user',   content: userPrompt   },
@@ -775,8 +785,13 @@ function parseAIResponse(text) {
   if (!text) return { hasRelation: false, meio: null, tipoAof: null, justificativa: '' };
 
   const grab = (label) => {
-    const m = text.match(new RegExp(label + '\\s*:\\s*(.+)', 'i'));
-    return m ? m[1].trim().replace(/^["'-]+|["'-]+$/g, '').trim() : '';
+    // (?: ... ) é essencial aqui: sem agrupar as alternativas do label,
+    // o "|" vazava pra fora do padrão inteiro e o regex passava a casar
+    // só a palavra solta (ex: "RELAÇÃO" sem os dois-pontos), deixando o
+    // grupo de captura (.+) undefined — daí o .trim() quebrava e a IA
+    // parecia "travada" pra sempre (era esse erro, não lentidão de rede).
+    const m = text.match(new RegExp('(?:' + label + ')\\s*:\\s*(.+)', 'i'));
+    return m && m[1] ? m[1].trim().replace(/^["'-]+|["'-]+$/g, '').trim() : '';
   };
 
   const relacaoRaw = grab('RELAÇÃO|RELACAO');
@@ -846,7 +861,18 @@ function showAIResult(parsed) {
   const inputEl = document.getElementById('input-meio');
   _aiLastMeio = parsed.hasRelation ? parsed.meio : null;
 
-  if (parsed.hasRelation && parsed.meio) {
+  // Checagem extra no cliente: mesmo com a instrução no prompt, a IA pode
+  // ocasionalmente repetir um meio já existente no grafo. Se isso acontecer,
+  // avisa em vez de preencher como se fosse um termo novo.
+  const jaExiste = parsed.meio && nodes.some(
+    nd => nd.group === 'meio' && nd.label.toLowerCase() === parsed.meio.toLowerCase()
+  );
+
+  if (parsed.hasRelation && parsed.meio && jaExiste) {
+    hintEl.textContent = `⚠ A IA sugeriu "${parsed.meio}", mas esse termo já existe no grafo. Confira se faz sentido reaproveitar ou digite outro abaixo.`;
+    hintEl.style.display = 'block';
+    if (inputEl && !inputEl.classList.contains('is-extra')) inputEl.value = '';
+  } else if (parsed.hasRelation && parsed.meio) {
     hintEl.textContent = `A IA sugeriu "${parsed.meio}" como conceito do meio — ajuste se quiser antes de confirmar.`;
     hintEl.style.display = 'block';
     if (inputEl && !inputEl.classList.contains('is-extra')) inputEl.value = parsed.meio;
@@ -963,7 +989,16 @@ async function updatePairUI() {
     return;
   }
 
-  showAIResult(parseAIResponse(aiText));
+  // Blindagem: se o parsing/render der algum erro inesperado, cai no
+  // estado de erro em vez de deixar a tela presa em "carregando" pra sempre.
+  try {
+    showAIResult(parseAIResponse(aiText));
+  } catch (err) {
+    console.error('Erro ao processar resposta da IA:', err);
+    showAIError();
+    document.getElementById('skip-btn').disabled = false;
+    return;
+  }
 
   // Habilita entrada e confirmação só agora
   document.getElementById('input-meio').disabled = false;
@@ -1106,11 +1141,16 @@ document.getElementById('ai-retry-btn').addEventListener('click', async () => {
   const aiText = await callAI(labelA, labelB);
   if (aiText === null) {
     showAIError();
-  } else {
+    return;
+  }
+  try {
     showAIResult(parseAIResponse(aiText));
     document.getElementById('input-meio').disabled = false;
     document.getElementById('confirm-btn').disabled = false;
     document.getElementById('input-meio').focus();
+  } catch (err) {
+    console.error('Erro ao processar resposta da IA:', err);
+    showAIError();
   }
 });
 document.getElementById('input-meio').addEventListener('keydown', e => {

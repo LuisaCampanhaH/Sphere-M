@@ -735,6 +735,9 @@ Par a analisar: "${labelGi}" e "${labelEi}".`;
   }
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s — evita ficar pendurado pra sempre
+
     const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -742,7 +745,7 @@ Par a analisar: "${labelGi}" e "${labelEi}".`;
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'mistral-medium-latest',
+        model: 'mistral-small-latest',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user',   content: userPrompt   },
@@ -750,7 +753,9 @@ Par a analisar: "${labelGi}" e "${labelEi}".`;
         temperature: 0.2,
         max_tokens: 300,
       }),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     if (!response.ok) return null;
 

@@ -472,6 +472,11 @@ function startSim(steps = 300) {
 
 function draw() {
   clampNodesToCanvas();
+  // Roda a propagação de caminho (positivo/negativo/ambos) toda vez que
+  // desenhamos, como rede de segurança — mesmo padrão do clampNodesToCanvas
+  // acima. Sem isso a função existia mas nunca era chamada, então nenhuma
+  // tag jamais se espalhava a partir das sementes (Sobrevivência/Morte).
+  propagatePathTag();
   ctx.clearRect(0, 0, W, H);
 
   ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--canvas-dot').trim() || 'rgba(0,0,0,0.06)';
@@ -1502,6 +1507,11 @@ function commitNodeEdit() {
     const novoCaminho  = nodeTagPanel._selCaminho.value || null;
     editingNode.tagNatureza = novaNatureza;
     editingNode.tagCaminho  = novoCaminho;
+    // Marca como manual: sem isso, tagCaminhoManual fica 'false' e o nó
+    // (1) nunca vira semente para propagatePathTag(), e (2) tem sua tag
+    // apagada de volta pra null na primeira propagação seguinte, porque
+    // propagatePathTag() só preserva tags de nós com tagCaminhoManual = true.
+    editingNode.tagCaminhoManual = !!novoCaminho;
     nodeTagPanel._cleanup?.();
     nodeTagPanel.remove();
     nodeTagPanel = null;

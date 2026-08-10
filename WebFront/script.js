@@ -688,26 +688,42 @@ function pathToString(startId, endId) {
   return null;
 }
 
-let _aiCurrentPair = null; 
+let _aiCurrentPair = null;
+let _aiLastMeio = null;
+
+// Tipos de relação (AOF) do método Sphere-M — mesma referência usada na CLI (Main.py).
+const TIPOS_AOF = [
+  'é-um', 'é-parte-de', 'é-composto-por', 'é-uma-variação-de',
+  'é-um-atributo-de', 'é-um-componente-de', 'é-um-elemento-de', 'é-caracterizado-por',
+];
 
 async function callAI(labelGi, labelEi) {
-  const domainContext = [...E].join(', ');
+  // Contexto do domínio: só os outros elementos, sem repetir o par atual
+  // (evita poluir o prompt e enviesar a IA a puxar relação com o próprio par).
+  const domainContext = [...E].filter(el => el !== labelGi && el !== labelEi).join(', ');
 
-  const systemPrompt = `Você é um ontólogo.
+  const systemPrompt = `Você é um ontólogo aplicando o método Sphere-M de construção de grafos de conhecimento.
 
-Sua tarefa é analisar dois elementos de um domínio ontológico e determinar se existe algum tipo de relação entre eles.
+O método conecta dois conceitos ("${labelGi}" e "${labelEi}") através de um único CONCEITO INTERMEDIÁRIO (o "meio"), usando relações do tipo AOF:
+${TIPOS_AOF.join(' | ')}
 
-Regras:
-- Se existir relação, descreva-a em linguagem natural, de forma clara e objetiva (2 a 4 frases).
-- Se não existir relação significativa entre os dois elementos neste domínio, diga isso claramente em uma frase.
-- Não invente relações que não existam de fato.
-- Seja direto. Não use introduções como "Com certeza" ou "Ótima pergunta".`;
+Sua tarefa: dado um par de conceitos, decidir se existe (ou pode ser construída) uma relação ontológica direta e plausível entre eles, e se sim, propor UM conceito intermediário curto que ligue os dois — de forma que "${labelGi}" se relacione com o meio, e o meio se relacione com "${labelEi}", cada ligação usando um dos tipos AOF acima.
 
-  const userPrompt = `O domínio de conhecimento sendo investigado é composto pelos seguintes elementos: ${domainContext}.
+Regras estritas de formato — responda SEMPRE exatamente neste layout, sem nenhum texto antes ou depois:
 
-Considere esse contexto ao interpretar os elementos abaixo.
+RELAÇÃO: SIM ou NÃO
+CONCEITO_MEIO: <1 a 3 palavras, ou "-" se RELAÇÃO for NÃO>
+TIPO_AOF: <um dos tipos da lista acima, ou "-" se RELAÇÃO for NÃO>
+JUSTIFICATIVA: <1 a 2 frases, direto, sem introduções como "com certeza" ou "ótima pergunta">
 
-Determine se há uma relação entre "${labelGi}" e "${labelEi}". Se houver, descreva a relação.`;
+Regras de conteúdo:
+- Não invente relações fracas, genéricas ou forçadas só para preencher a resposta. Se a relação exigir mais de um passo intermediário óbvio ou for artificial, responda RELAÇÃO: NÃO.
+- O CONCEITO_MEIO deve ser um substantivo ou expressão curta, nunca uma frase.
+- Use os outros elementos do domínio apenas como contexto de fundo, não force conexão com eles.`;
+
+  const userPrompt = `Domínio: ${domainContext || '(sem outros elementos ainda)'}
+
+Par a analisar: "${labelGi}" e "${labelEi}".`;
 
   const apiKey = window.APP_CONFIG?.MISTRAL_API_KEY;
   if (!apiKey) {
@@ -731,7 +747,8 @@ Determine se há uma relação entre "${labelGi}" e "${labelEi}". Se houver, des
           { role: 'system', content: systemPrompt },
           { role: 'user',   content: userPrompt   },
         ],
-        max_tokens: 1000,
+        temperature: 0.2,
+        max_tokens: 300,
       }),
     });
 
@@ -743,11 +760,36 @@ Determine se há uma relação entre "${labelGi}" e "${labelEi}". Se houver, des
     return null;
   }
 }
- 
-// ── Detecta se a resposta indica "sem relação" ───────────────────────
- 
-function aiFoundRelation(text) {
-  if (!text) return false;
+
+// ── Interpreta a resposta estruturada da IA ──────────────────────────
+// Espera o layout RELAÇÃO / CONCEITO_MEIO / TIPO_AOF / JUSTIFICATIVA.
+// Se a IA não seguir o formato à risca (acontece), cai num fallback
+// heurístico em vez de quebrar a UI.
+
+function parseAIResponse(text) {
+  if (!text) return { hasRelation: false, meio: null, tipoAof: null, justificativa: '' };
+
+  const grab = (label) => {
+    const m = text.match(new RegExp(label + '\\s*:\\s*(.+)', 'i'));
+    return m ? m[1].trim().replace(/^["'-]+|["'-]+$/g, '').trim() : '';
+  };
+
+  const relacaoRaw = grab('RELAÇÃO|RELACAO');
+  if (relacaoRaw) {
+    const hasRelation = /^sim/i.test(relacaoRaw);
+    const meioRaw = grab('CONCEITO_MEIO|CONCEITO MEIO');
+    const tipoRaw = grab('TIPO_AOF|TIPO AOF');
+    const justRaw = grab('JUSTIFICATIVA') || text;
+    return {
+      hasRelation,
+      meio: hasRelation && meioRaw && meioRaw !== '-' ? meioRaw : null,
+      tipoAof: hasRelation && tipoRaw && tipoRaw !== '-' ? tipoRaw : null,
+      justificativa: justRaw,
+    };
+  }
+
+  // Fallback: a IA não respondeu no formato esperado — usa heurística antiga
+  // sobre o texto livre, só para não travar o fluxo.
   const negatives = [
     'não há relação', 'não existe relação', 'não possuem relação',
     'sem relação', 'não estão diretamente relacionados',
@@ -755,7 +797,8 @@ function aiFoundRelation(text) {
     'não há uma relação', 'não há nenhuma relação',
   ];
   const lower = text.toLowerCase();
-  return !negatives.some(phrase => lower.includes(phrase));
+  const hasRelation = !negatives.some(phrase => lower.includes(phrase));
+  return { hasRelation, meio: null, tipoAof: null, justificativa: text };
 }
 
 
@@ -776,12 +819,17 @@ function showAIError() {
   document.getElementById('ai-hint').style.display = 'none';
 }
 
-function showAIResult(text, hasRelation) {
+function showAIResult(parsed) {
   _setAIState('result');
-  document.getElementById('ai-result-text').textContent = text;
+
+  let displayText = parsed.justificativa || '';
+  if (parsed.hasRelation && parsed.tipoAof) {
+    displayText = `[${parsed.tipoAof}] ${displayText}`;
+  }
+  document.getElementById('ai-result-text').textContent = displayText;
 
   const badge = document.getElementById('ai-relation-badge');
-  if (hasRelation) {
+  if (parsed.hasRelation) {
     badge.textContent = 'Relação encontrada';
     badge.className = 'found';
   } else {
@@ -789,7 +837,20 @@ function showAIResult(text, hasRelation) {
     badge.className = 'not-found';
   }
 
-  document.getElementById('ai-hint').style.display = hasRelation ? 'block' : 'none';
+  const hintEl = document.getElementById('ai-hint');
+  const inputEl = document.getElementById('input-meio');
+  _aiLastMeio = parsed.hasRelation ? parsed.meio : null;
+
+  if (parsed.hasRelation && parsed.meio) {
+    hintEl.textContent = `A IA sugeriu "${parsed.meio}" como conceito do meio — ajuste se quiser antes de confirmar.`;
+    hintEl.style.display = 'block';
+    if (inputEl && !inputEl.classList.contains('is-extra')) inputEl.value = parsed.meio;
+  } else if (parsed.hasRelation) {
+    hintEl.textContent = 'Leia a justificativa acima e digite abaixo o conceito que conecta os dois elementos.';
+    hintEl.style.display = 'block';
+  } else {
+    hintEl.style.display = 'none';
+  }
 }
 
 function _setAIState(state) {
@@ -897,8 +958,7 @@ async function updatePairUI() {
     return;
   }
 
-  const hasRelation = aiFoundRelation(aiText);
-  showAIResult(aiText, hasRelation);
+  showAIResult(parseAIResponse(aiText));
 
   // Habilita entrada e confirmação só agora
   document.getElementById('input-meio').disabled = false;
@@ -1042,7 +1102,7 @@ document.getElementById('ai-retry-btn').addEventListener('click', async () => {
   if (aiText === null) {
     showAIError();
   } else {
-    showAIResult(aiText, aiFoundRelation(aiText));
+    showAIResult(parseAIResponse(aiText));
     document.getElementById('input-meio').disabled = false;
     document.getElementById('confirm-btn').disabled = false;
     document.getElementById('input-meio').focus();
@@ -1174,20 +1234,32 @@ function startNodeEdit(node) {
   nodeTagPanel.style.position = 'fixed';
   nodeTagPanel.style.left = nodeEditInput.style.left;
   nodeTagPanel.style.top  = (rect.top + (node.y - node.h / 2) * scaleY + 30) + 'px';
-  nodeTagPanel.style.width = Math.max(node.w * scaleX, 150) + 'px';
-  nodeTagPanel.style.display = 'flex';
-  nodeTagPanel.style.gap = '4px';
   nodeTagPanel.style.zIndex = '9999';
-  nodeTagPanel.style.background = '#fff';
-  nodeTagPanel.style.border = '1px solid #ccc';
-  nodeTagPanel.style.borderRadius = '4px';
-  nodeTagPanel.style.padding = '3px';
-  nodeTagPanel.style.boxShadow = '0 2px 8px rgba(0,0,0,0.18)';
+  nodeTagPanel.style.boxShadow = '0 4px 14px rgba(0,0,0,0.18)';
+  nodeTagPanel.style.display = 'flex';
+  nodeTagPanel.style.flexDirection = 'column';
+  nodeTagPanel.style.gap = '6px';
+  nodeTagPanel.style.padding = '8px';
+  nodeTagPanel.style.width = Math.max(node.w * scaleX, 170) + 'px';
+  nodeTagPanel.style.border = '1px solid var(--border2, #ccc7ba)';
+  nodeTagPanel.style.borderRadius = 'var(--radius-sm, 8px)';
+  nodeTagPanel.style.background = 'var(--surface, #faf9f6)';
+
+  const selectsRow = document.createElement('div');
+  selectsRow.style.display = 'flex';
+  selectsRow.style.gap = '6px';
+
+  const selStyle = `
+    flex: 1; font: 500 11px "Geist Mono", ui-monospace, monospace;
+    padding: 4px 6px; border-radius: 6px;
+    border: 1px solid var(--border2, #ccc7ba);
+    background: var(--surface2, #f3f1ec); color: var(--text, #1c1a17);
+    cursor: pointer; outline: none;
+  `;
 
   const selNatureza = document.createElement('select');
   selNatureza.title = 'Tag de natureza';
-  selNatureza.style.font = '11px "Geist Mono", ui-monospace, monospace';
-  selNatureza.style.flex = '1';
+  selNatureza.style.cssText = selStyle;
   [['', '— natureza'], ['Classe', 'Classe'], ['Objeto', 'Objeto']].forEach(([v, t]) => {
     const opt = document.createElement('option');
     opt.value = v; opt.textContent = t;
@@ -1197,8 +1269,7 @@ function startNodeEdit(node) {
 
   const selCaminho = document.createElement('select');
   selCaminho.title = 'Tag de caminho';
-  selCaminho.style.font = '11px "Geist Mono", ui-monospace, monospace';
-  selCaminho.style.flex = '1';
+  selCaminho.style.cssText = selStyle;
   [['', '— caminho'], ['positivo', 'positivo'], ['negativo', 'negativo'], ['ambos', 'ambos']].forEach(([v, t]) => {
     const opt = document.createElement('option');
     opt.value = v; opt.textContent = t;
@@ -1206,8 +1277,40 @@ function startNodeEdit(node) {
     selCaminho.appendChild(opt);
   });
 
-  nodeTagPanel.appendChild(selNatureza);
-  nodeTagPanel.appendChild(selCaminho);
+  selectsRow.appendChild(selNatureza);
+  selectsRow.appendChild(selCaminho);
+
+  // ── Botões explícitos pra fechar o painel — sem depender só de blur ──
+  const btnRow = document.createElement('div');
+  btnRow.style.display = 'flex';
+  btnRow.style.gap = '6px';
+
+  const okBtn = document.createElement('button');
+  okBtn.type = 'button';
+  okBtn.textContent = 'OK';
+  okBtn.style.cssText = `
+    flex: 1; font: 600 11px "Geist Mono", ui-monospace, monospace;
+    padding: 5px 6px; border-radius: 6px; border: none; cursor: pointer;
+    background: var(--accent, #6d1fc2); color: #fff;
+  `;
+  okBtn.addEventListener('click', () => commitNodeEdit());
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.textContent = 'Cancelar';
+  cancelBtn.style.cssText = `
+    flex: 1; font: 500 11px "Geist Mono", ui-monospace, monospace;
+    padding: 5px 6px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border2, #ccc7ba);
+    background: var(--surface2, #f3f1ec); color: var(--text-2, #4a463e);
+  `;
+  cancelBtn.addEventListener('click', () => cancelNodeEdit());
+
+  btnRow.appendChild(okBtn);
+  btnRow.appendChild(cancelBtn);
+
+  nodeTagPanel.appendChild(selectsRow);
+  nodeTagPanel.appendChild(btnRow);
   document.body.appendChild(nodeTagPanel);
   nodeTagPanel._selNatureza = selNatureza;
   nodeTagPanel._selCaminho = selCaminho;
@@ -1216,14 +1319,26 @@ function startNodeEdit(node) {
     if (e.key === 'Enter')  { e.preventDefault(); commitNodeEdit(); }
     if (e.key === 'Escape') { e.preventDefault(); cancelNodeEdit(); }
   });
-  nodeEditInput.addEventListener('blur', () => {
-    // pequeno atraso para permitir clique nos selects sem fechar o editor antes da hora
-    setTimeout(() => {
-      if (document.activeElement !== selNatureza && document.activeElement !== selCaminho) {
-        commitNodeEdit();
-      }
-    }, 150);
+
+  // Enter/Escape também funcionam com foco nos selects — antes só o input reagia.
+  [selNatureza, selCaminho].forEach(sel => {
+    sel.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); commitNodeEdit(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancelNodeEdit(); }
+    });
   });
+
+  // Clicar fora do input E do painel de tags fecha (confirmando) — antes
+  // nada fechava o painel se o foco saísse de um select direto pro canvas,
+  // e ele ficava "travado" na tela.
+  const outsideClickHandler = e => {
+    if (!editingNode) return;
+    if (nodeEditInput?.contains(e.target)) return;
+    if (nodeTagPanel?.contains(e.target)) return;
+    commitNodeEdit();
+  };
+  document.addEventListener('mousedown', outsideClickHandler, true);
+  nodeTagPanel._cleanup = () => document.removeEventListener('mousedown', outsideClickHandler, true);
 }
 
 function commitNodeEdit() {
@@ -1254,6 +1369,7 @@ function commitNodeEdit() {
     const novoCaminho  = nodeTagPanel._selCaminho.value || null;
     editingNode.tagNatureza = novaNatureza;
     editingNode.tagCaminho  = novoCaminho;
+    nodeTagPanel._cleanup?.();
     nodeTagPanel.remove();
     nodeTagPanel = null;
   }
@@ -1267,7 +1383,7 @@ function commitNodeEdit() {
 
 function cancelNodeEdit() {
   if (nodeEditInput) { nodeEditInput.remove(); nodeEditInput = null; }
-  if (nodeTagPanel) { nodeTagPanel.remove(); nodeTagPanel = null; }
+  if (nodeTagPanel) { nodeTagPanel._cleanup?.(); nodeTagPanel.remove(); nodeTagPanel = null; }
   editingNode = null;
   draw();
 }

@@ -103,6 +103,11 @@ function createNode(label, group, x, y) {
     linkedToFloor: false,
     // ── Dupla tag (extensão da IC) ──
     tagNatureza: null,  // 'Classe' | 'Objeto' | null
+    // tagCaminhoManual: só o que o humano escolheu de fato no duplo clique
+    // (fonte da verdade, nunca sobrescrita pela propagação).
+    tagCaminhoManual: null, // 'positivo' | 'negativo' | 'ambos' | null
+    // tagCaminho: resultado já propagado pelo grafo — é o que o desenho e a
+    // auditoria de arestas usam. Recalculado do zero em propagatePathTag().
     tagCaminho: null,   // 'positivo' | 'negativo' | 'ambos' | null
   };
   nodes.push(node);
@@ -164,39 +169,70 @@ function propagateMarks() {
 // (Classe = conceito geral, Objeto = ocorrência concreta), decidida
 // diretamente pelo humano no editor do nó.
 //
-// tagCaminho TAMBÉM NÃO se propaga mais pelo grafo. Isso era um bug de
-// desenho, não um detalhe de implementação: testamos (fora desta UI, num
-// script Python à parte, comparando lado a lado) inundar a tag de caminho
-// pelo grafo -- do mesmo jeito que linkedToCeiling/linkedToFloor já fazem
-// -- contra deixar a tag existir só onde o humano a atribui diretamente.
+// tagCaminho SE PROPAGA pelo grafo inteiro, igual linkedToCeiling/
+// linkedToFloor. Histórico: isso já tinha sido testado e desativado antes
+// por contaminar nós sem papel causal direto -- decisão revertida a pedido
+// explícito, a propagação deve permear toda relação (ei → leg → gi).
 //
-// A inundação (mesmo numa única direção, como estava aqui antes) contamina
-// nós que não têm papel causal nenhum: um nó que é só ancestral taxonômico
-// de um elemento "positivo" e de um "negativo" virava "ambos" mesmo sem
-// nenhuma relação real de causa com nenhum dos dois desfechos -- e um nó
-// perto de um único vizinho "positivo" virava "positivo" mesmo sem
-// ninguém ter dito isso sobre ele. É a mesma razão pela qual reaproveitar
-// achou_teto/achou_piso não serve aqui: alcançabilidade na árvore
-// taxonômica não é o mesmo que "contribui causalmente para esse desfecho".
+// Duas garantias pra não repetir a contaminação:
 //
-// A tag de caminho, portanto, só existe onde o humano a colocou (duplo
-// clique no nó → seletor de caminho). Não há propagação automática.
-// "Ambos" só aparece se o próprio humano escolher essa opção para aquele
-// nó específico -- não como resultado de estar perto dos dois lados.
+//   1. tagCaminhoManual: só é escrito pelo editor do nó (duplo clique).
+//      É a fonte da verdade e é IMUTÁVEL durante a propagação -- um nó
+//      marcado manualmente nunca é sobrescrito pelo que chega dos vizinhos,
+//      só espalha a própria tag pra fora. (Antes dessa correção, um vizinho
+//      com tag oposta podia virar a tag manual do próprio nó em 'ambos'
+//      sem o humano ter dito nada sobre esse nó específico.)
+//
+//   2. 'ambos' NUNCA é resultado automático de propagação. Um nó sem tag
+//      manual que recebe 'positivo' de um lado e 'negativo' de outro (ex:
+//      ancestral comum de dois ramos) vira 'conflito', não 'ambos' --
+//      porque a gente sabe que ele foi alcançado pelos dois lados, mas não
+//      sabe (ninguém disse) que ele tem relação causal real com os dois.
+//      'ambos' continua reservado pro humano marcar um nó específico como
+//      tendo os dois papéis de propósito.
+//
+// tagCaminho é o campo já propagado, recalculado do zero a cada chamada de
+// propagatePathTag() -- é o que o desenho (nó e aresta) usa. A auditoria
+// (auditTags) continua olhando só tagCaminhoManual, porque a pergunta que
+// ela responde ("os dois lados estão equilibrados no que foi *afirmado*?")
+// é sobre o que o humano disse, não sobre o que foi inundado ou é conflito.
 
-function combineCaminho(atual, novo) {
+// Combina dois sinais que chegam por propagação num nó SEM tag manual.
+// Nunca retorna 'ambos' -- ver garantia 2 acima.
+function mergePropagado(atual, novo) {
   if (!novo) return atual;
   if (!atual) return novo;
   if (atual === novo) return atual;
-  return 'ambos';
+  return 'conflito';
 }
 
-// Não propaga mais nada -- existe só para não quebrar as chamadas
-// existentes (executePoda, fim de rodada, commit do editor de nó).
-// Mantido como no-op explícito, e não removido, para deixar rastreável
-// no histórico por que a inundação foi descontinuada.
+// Recalcula tagCaminho em todos os nós, inundando a partir de todo
+// tagCaminhoManual existente, pelas arestas do grafo (nas duas direções --
+// caminho positivo/negativo/ambos não tem sentido de direção como
+// teto/piso). Roda em ondas até estabilizar. Nós com tagCaminhoManual são
+// fixos: só emitem, nunca recebem.
 function propagatePathTag() {
-  // intencionalmente vazio — ver comentário acima
+  // reseta pro estado manual — evita acumular lixo de rodadas/edges antigas
+  nodes.forEach(nd => { nd.tagCaminho = nd.tagCaminhoManual; });
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const e of edges) {
+      const a = nodes.find(n => n.id === e.from);
+      const b = nodes.find(n => n.id === e.to);
+      if (!a || !b) continue;
+
+      if (!b.tagCaminhoManual) {
+        const novoB = mergePropagado(b.tagCaminho, a.tagCaminho);
+        if (novoB !== b.tagCaminho) { b.tagCaminho = novoB; changed = true; }
+      }
+      if (!a.tagCaminhoManual) {
+        const novoA = mergePropagado(a.tagCaminho, b.tagCaminho);
+        if (novoA !== a.tagCaminho) { a.tagCaminho = novoA; changed = true; }
+      }
+    }
+  }
 }
 
 // ── Poda: remove qualquer nó sem C+F simultâneo, exceto teto e piso ──
@@ -206,6 +242,7 @@ function executePoda() {
   let changed = true;
   while (changed) {
     propagateMarks();
+    propagatePathTag();
     const toRemove = nodes
       .filter(nd =>
         nd.group !== 'teto' &&
@@ -239,12 +276,12 @@ function auditTags() {
   const ambosPorNatureza = { Classe: [], Objeto: [], semNatureza: [] };
 
   nodes.forEach(nd => {
-    if (nd.tagCaminho === 'positivo') contagem.positivo++;
-    else if (nd.tagCaminho === 'negativo') contagem.negativo++;
-    else if (nd.tagCaminho === 'ambos') contagem.ambos++;
+    if (nd.tagCaminhoManual === 'positivo') contagem.positivo++;
+    else if (nd.tagCaminhoManual === 'negativo') contagem.negativo++;
+    else if (nd.tagCaminhoManual === 'ambos') contagem.ambos++;
     else contagem.semTag++;
 
-    if (nd.tagCaminho === 'ambos') {
+    if (nd.tagCaminhoManual === 'ambos') {
       const chave = nd.tagNatureza || 'semNatureza';
       ambosPorNatureza[chave].push(nd.label);
     }
@@ -280,6 +317,14 @@ function renderAuditPanel() {
     <div class="audit-row audit-desq${desqAlerta ? ' audit-desq-alert' : ''}">
       desequilíbrio pos/neg: <b>${desqStr}</b>${desqAlerta ? ' ⚠ possível viés' : ''}
     </div>`;
+
+  const conflitos = nodes.filter(nd => !nd.tagCaminhoManual && nd.tagCaminho === 'conflito');
+  if (conflitos.length) {
+    html += `<div class="audit-row audit-list">
+      <span><span class="audit-dot" style="background:${COR_CAMINHO.conflito}"></span>alcançados por positivo e negativo por propagação, sem tag humana (não conta como "ambos"):</span>
+      <ul>${conflitos.map(nd => `<li>${nd.label}</li>`).join('')}</ul>
+    </div>`;
+  }
 
   const classesAmbos = ambosPorNatureza.Classe;
   if (classesAmbos.length) {
@@ -472,9 +517,9 @@ function draw() {
     let edgeWidth = 1.5;
 
     if (tagA && tagB && tagA !== tagB) {
-      // extremidades com tags diferentes — trata como "ambos" pra não
-      // sugerir uma cor só e esconder o conflito
-      edgeColor = COR_CAMINHO.ambos;
+      // extremidades com tags diferentes — mostra como conflito, não como
+      // 'ambos' (que é só afirmação humana direta num nó específico)
+      edgeColor = COR_CAMINHO.conflito;
       edgeWidth = 2.5;
     } else if (tagA || tagB) {
       edgeColor = COR_CAMINHO[tagA || tagB];
@@ -925,6 +970,7 @@ async function updatePairUI() {
   // ── Fim da rodada ──────────────────────────────────────────────
   if (pairIdx >= GE.length) {
     propagateMarks();
+    propagatePathTag();
     renderAuditPanel();
 
     G = new Set(tempG);
@@ -1268,6 +1314,10 @@ const COR_CAMINHO = {
   positivo: '#0a8f3c',
   negativo: '#c1121f',
   ambos: '#6a2ca5',
+  // conflito: gerado só pela propagação (dois lados diferentes chegando no
+  // mesmo nó sem ninguém ter marcado ele manualmente) -- cor neutra, de
+  // propósito diferente de 'ambos' (que é afirmação humana direta).
+  conflito: '#8a8a8a',
 };
 
 function startNodeEdit(node) {
@@ -1345,7 +1395,7 @@ function startNodeEdit(node) {
   [['', '— caminho'], ['positivo', 'positivo'], ['negativo', 'negativo'], ['ambos', 'ambos']].forEach(([v, t]) => {
     const opt = document.createElement('option');
     opt.value = v; opt.textContent = t;
-    if (node.tagCaminho === v || (!node.tagCaminho && v === '')) opt.selected = true;
+    if (node.tagCaminhoManual === v || (!node.tagCaminhoManual && v === '')) opt.selected = true;
     selCaminho.appendChild(opt);
   });
 
@@ -1439,8 +1489,9 @@ function commitNodeEdit() {
   if (nodeTagPanel) {
     const novaNatureza = nodeTagPanel._selNatureza.value || null;
     const novoCaminho  = nodeTagPanel._selCaminho.value || null;
-    editingNode.tagNatureza = novaNatureza;
-    editingNode.tagCaminho  = novoCaminho;
+    editingNode.tagNatureza      = novaNatureza;
+    editingNode.tagCaminhoManual = novoCaminho;
+    propagatePathTag(); // repropaga na hora, pra ver o efeito já no fechar do editor
     nodeTagPanel._cleanup?.();
     nodeTagPanel.remove();
     nodeTagPanel = null;

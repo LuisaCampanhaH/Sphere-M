@@ -102,8 +102,10 @@ function createNode(label, group, x, y) {
     linkedToCeiling: false,
     linkedToFloor: false,
     // ── Dupla tag (extensão da IC) ──
-    tagNatureza: null,  // 'Classe' | 'Objeto' | null
+    tagNatureza: null,  // 'Classe' | 'Objeto' | 'Atributo' | 'Instância' | null
     tagCaminho: null,   // 'positivo' | 'negativo' | 'ambos' | null
+    tagCaminhoManual: false, // true = humano marcou este nó direto no editor
+                              // false = valor atual veio (ou pode vir) da propagação automática
   };
   nodes.push(node);
   return node;
@@ -207,31 +209,55 @@ function propagateMarks() {
   }
 }
 
-// ── Dupla tag: natureza (Classe/Objeto) + caminho (positivo/negativo/ambos) ──
+// ── Dupla tag: natureza (Classe/Objeto/Atributo/Instância) + caminho (positivo/negativo/ambos) ──
 //
 // tagNatureza NÃO se propaga: é uma característica do próprio elemento
-// (Classe = conceito geral, Objeto = ocorrência concreta), decidida
-// diretamente pelo humano no editor do nó.
+// (Classe = conceito geral, Objeto = entidade concreta do domínio,
+// Atributo = propriedade/característica de algo, Instância = ocorrência
+// específica de uma classe), decidida diretamente pelo humano no editor do nó.
+const NATUREZAS = ['Classe', 'Objeto', 'Atributo', 'Instância'];
+const SIMBOLOS_NATUREZA = { Classe: '■', Objeto: '●', Atributo: '▲', 'Instância': '◆' };
 //
-// tagCaminho TAMBÉM NÃO se propaga mais pelo grafo. Isso era um bug de
-// desenho, não um detalhe de implementação: testamos (fora desta UI, num
-// script Python à parte, comparando lado a lado) inundar a tag de caminho
-// pelo grafo -- do mesmo jeito que linkedToCeiling/linkedToFloor já fazem
-// -- contra deixar a tag existir só onde o humano a atribui diretamente.
+// tagCaminho: HISTÓRICO -- a primeira versão inundava a tag pelo grafo do
+// mesmo jeito que linkedToCeiling/linkedToFloor (flood: todo vizinho de um
+// nó marcado herda a marca, e o flood se espalha dali em diante). Isso
+// contaminava nós sem relação real com o desfecho: um ancestral taxonômico
+// compartilhado por um ramo "positivo" e um ramo "negativo" virava "ambos"
+// mesmo sem ligação real com nenhum dos dois -- e um nó a 1 aresta de
+// distância de um único vizinho "positivo" virava "positivo" só por estar
+// perto, mesmo sem ninguém ter dito isso sobre ele. Por causa disso a
+// propagação foi desligada por um tempo (versão anterior deste arquivo) e
+// a tag só existia onde o humano clicava.
 //
-// A inundação (mesmo numa única direção, como estava aqui antes) contamina
-// nós que não têm papel causal nenhum: um nó que é só ancestral taxonômico
-// de um elemento "positivo" e de um "negativo" virava "ambos" mesmo sem
-// nenhuma relação real de causa com nenhum dos dois desfechos -- e um nó
-// perto de um único vizinho "positivo" virava "positivo" mesmo sem
-// ninguém ter dito isso sobre ele. É a mesma razão pela qual reaproveitar
-// achou_teto/achou_piso não serve aqui: alcançabilidade na árvore
-// taxonômica não é o mesmo que "contribui causalmente para esse desfecho".
+// FIX (versão atual): em vez de inundar 1 aresta por vez a partir de
+// QUALQUER nó marcado, a propagação agora:
+//   1. só usa como "semente direcional" nós marcados manualmente como
+//      'positivo' ou 'negativo' (normalmente os dois nós do FLOOR --
+//      Sobrevivência e Morte -- mas pode ser qualquer nó que o humano
+//      marcar explicitamente);
+//   2. pra cada semente, calcula ALCANÇABILIDADE REAL no grafo dirigido
+//      (BFS seguindo o caminho de arestas até a semente, não "é vizinho
+//      direto de"). Só quem tem um caminho de verdade até aquela semente
+//      herda a marca dela;
+//   3. um nó só vira 'ambos' automaticamente se alcançar UMA semente
+//      'positivo' E UMA semente 'negativo' por caminhos de fato distintos
+//      -- não por estar "no meio" ou perto dos dois;
+//   4. sementes marcadas 'ambos' NÃO propagam direção nenhuma (não faz
+//      sentido inundar "ambos" pra frente -- ver ressalva abaixo);
+//   5. tags que o humano colocou manualmente (tagCaminhoManual = true)
+//      nunca são sobrescritas pela propagação automática.
 //
-// A tag de caminho, portanto, só existe onde o humano a colocou (duplo
-// clique no nó → seletor de caminho). Não há propagação automática.
-// "Ambos" só aparece se o próprio humano escolher essa opção para aquele
-// nó específico -- não como resultado de estar perto dos dois lados.
+// RESSALVA que continua valendo (documentada no roteiro): as arestas do
+// grafo são do vocabulário AOF -- é-um, é-parte-de, é-composto-por, etc.
+// -- ou seja, são relações TAXONÔMICAS, não relações causais do tipo
+// "leva a" ou "aumenta o risco de". Então "alcança Morte por um caminho
+// taxonômico" é uma aproximação de "pertence ao ramo/caminho da Morte",
+// não uma prova de causalidade real. Isso é adequado pro que o roteiro
+// pede (dividir visualmente os dois sub-grafos / caminhos), mas não deve
+// ser lido como um motor de inferência causal. Se algum dia quiserem
+// causalidade de verdade, o caminho é dar um tipo de aresta próprio pra
+// isso (separado do AOF) e só propagar por esse tipo -- ver seção
+// "próximo passo" no fim deste comentário.
 
 function combineCaminho(atual, novo) {
   if (!novo) return atual;
@@ -240,12 +266,50 @@ function combineCaminho(atual, novo) {
   return 'ambos';
 }
 
-// Não propaga mais nada -- existe só para não quebrar as chamadas
-// existentes (executePoda, fim de rodada, commit do editor de nó).
-// Mantido como no-op explícito, e não removido, para deixar rastreável
-// no histórico por que a inundação foi descontinuada.
+// Retorna o conjunto de ids de nós que têm um caminho dirigido de verdade
+// (multi-hop, seguindo edges.from → edges.to) até targetId. Ou seja:
+// "quem, seguindo as arestas, eventualmente chega em targetId".
+function _nosQueAlcancam(targetId) {
+  const alcancam = new Set();
+  let fronteira = [targetId];
+  while (fronteira.length) {
+    const proxima = [];
+    for (const atual of fronteira) {
+      const predecessores = edges.filter(e => e.to === atual).map(e => e.from);
+      for (const p of predecessores) {
+        if (!alcancam.has(p)) {
+          alcancam.add(p);
+          proxima.push(p);
+        }
+      }
+    }
+    fronteira = proxima;
+  }
+  return alcancam;
+}
+
 function propagatePathTag() {
-  // intencionalmente vazio — ver comentário acima
+  // Sementes: nós marcados manualmente com direção (positivo/negativo).
+  // 'ambos' manual fica só no próprio nó -- não vira semente direcional.
+  const sementes = nodes.filter(nd =>
+    nd.tagCaminhoManual && (nd.tagCaminho === 'positivo' || nd.tagCaminho === 'negativo')
+  );
+
+  // id -> tag automática calculada (antes de aplicar)
+  const calculado = new Map();
+
+  sementes.forEach(semente => {
+    const alcancaveis = _nosQueAlcancam(semente.id);
+    alcancaveis.forEach(id => {
+      const atual = calculado.get(id) || null;
+      calculado.set(id, combineCaminho(atual, semente.tagCaminho));
+    });
+  });
+
+  nodes.forEach(nd => {
+    if (nd.tagCaminhoManual) return; // nunca sobrescreve tag humana
+    nd.tagCaminho = calculado.get(nd.id) || null;
+  });
 }
 
 // ── Poda: remove qualquer nó sem C+F simultâneo, exceto teto e piso ──
@@ -285,7 +349,8 @@ function isGraphComplete() {
 //      ou alguém está só listando fatores de um lado só?
 function auditTags() {
   const contagem = { positivo: 0, negativo: 0, ambos: 0, semTag: 0 };
-  const ambosPorNatureza = { Classe: [], Objeto: [], semNatureza: [] };
+  const ambosPorNatureza = { semNatureza: [] };
+  NATUREZAS.forEach(nat => { ambosPorNatureza[nat] = []; });
 
   nodes.forEach(nd => {
     if (nd.tagCaminho === 'positivo') contagem.positivo++;
@@ -330,13 +395,15 @@ function renderAuditPanel() {
       desequilíbrio pos/neg: <b>${desqStr}</b>${desqAlerta ? ' ⚠ possível viés' : ''}
     </div>`;
 
-  const classesAmbos = ambosPorNatureza.Classe;
-  if (classesAmbos.length) {
+  NATUREZAS.concat('semNatureza').forEach(nat => {
+    const lista = ambosPorNatureza[nat];
+    if (!lista.length) return;
+    const rotulo = nat === 'semNatureza' ? 'nós sem natureza definida' : `${nat.toLowerCase()}s`;
     html += `<div class="audit-row audit-list">
-      <span>classes marcadas "ambos" (revisar se é papel duplo real):</span>
-      <ul>${classesAmbos.map(l => `<li>${l}</li>`).join('')}</ul>
+      <span>${rotulo} marcados "ambos" (revisar se é papel duplo real):</span>
+      <ul>${lista.map(l => `<li>${l}</li>`).join('')}</ul>
     </div>`;
-  }
+  });
 
   el.innerHTML = html;
 }
@@ -460,6 +527,11 @@ function startSim(steps = 300) {
 
 function draw() {
   clampNodesToCanvas();
+  // Roda a propagação de caminho (positivo/negativo/ambos) toda vez que
+  // desenhamos, como rede de segurança — mesmo padrão do clampNodesToCanvas
+  // acima. Sem isso a função existia mas nunca era chamada, então nenhuma
+  // tag jamais se espalhava a partir das sementes (Sobrevivência/Morte).
+  propagatePathTag();
   ctx.clearRect(0, 0, W, H);
 
   ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--canvas-dot').trim() || 'rgba(0,0,0,0.06)';
@@ -693,14 +765,14 @@ function draw() {
       });
     }
 
-    // ── Selo de natureza (Classe/Objeto) — extensão da IC ──
+    // ── Selo de natureza (Classe/Objeto/Atributo/Instância) — extensão da IC ──
     if (nd.tagNatureza) {
       ctx.save();
       ctx.font = '600 10px "Geist Mono", ui-monospace, monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = c.stroke;
-      const simbolo = nd.tagNatureza === 'Classe' ? '■' : '●';
+      const simbolo = SIMBOLOS_NATUREZA[nd.tagNatureza] || '●';
       ctx.fillText(simbolo, nx + nw - 10, ny + 10);
       ctx.restore();
     }
@@ -810,7 +882,7 @@ function pathToString(startId, endId) {
 
 let _aiCurrentPair = null;
 let _aiLastMeio = null;
-let _aiLastTipoAof = null;
+let _aiLastTipoAof = null; // tipo AOF sugerido pela IA pro par atual — aplicado às arestas ao confirmar, editável depois clicando na aresta
 
 // Tipos de relação (AOF) 
 const TIPOS_AOF = [
@@ -818,10 +890,12 @@ const TIPOS_AOF = [
   'é-um-atributo-de', 'é-um-componente-de', 'é-um-elemento-de', 'é-caracterizado-por',
 ];
 
-// Notas de desambiguação do domínio — termos que a IA poderia interpretar
-// errado por causa de outros sentidos mais comuns na língua. Editar aqui
-// se o domínio mudar ou surgirem novas ambiguidades.
-const DOMAIN_NOTES = `- "Natal", "pré-natal" e "pós-natal" aqui se referem ao contexto de mortalidade/natalidade (gravidez, parto, período neonatal) — NUNCA ao feriado de Natal (25 de dezembro). Trate esses termos exclusivamente como fases do ciclo gestacional/perinatal.`;
+// Notas de desambiguação do domínio — exemplos concretos de termos que a IA
+// já confundiu com outro sentido mais comum na língua portuguesa. A regra
+// geral (ver systemPrompt) já cobre qualquer ambiguidade nova; isto aqui é
+// só reforço pontual pra casos que já se mostraram problemáticos na prática.
+// Editar/ampliar esta lista sempre que surgir uma nova confusão recorrente.
+const DOMAIN_NOTES = `- "Natal", "pré-natal" e "pós-natal": aqui SEMPRE se referem ao contexto de mortalidade/natalidade (gravidez, parto, período neonatal) — NUNCA ao feriado de Natal (25 de dezembro). Trate esses termos exclusivamente como fases do ciclo gestacional/perinatal, mesmo que a palavra "Natal" sozinha remeta ao feriado no uso cotidiano.`;
 
 async function callAI(labelGi, labelEi) {
   // Contexto do domínio: só os outros elementos, sem repetir o par atual
@@ -839,6 +913,11 @@ async function callAI(labelGi, labelEi) {
 
   const systemPrompt = `Você é um ontólogo aplicando o método Sphere-M de construção de grafos de conhecimento.
 
+REGRA MAIS IMPORTANTE, aplique-a antes de qualquer outra coisa — DESAMBIGUAÇÃO DE TERMOS:
+Muitas palavras do português têm mais de um sentido possível. Você NUNCA deve assumir o sentido mais comum ou mais frequente de uma palavra no uso cotidiano. Para CADA termo do par abaixo, primeiro decida qual sentido faz sentido dentro do domínio informado (a lista de "Domínio" no final e os outros conceitos já usados no grafo) — só depois de fixar esse sentido, avalie a relação. Se um termo puder ser lido de duas formas diferentes, escolha sempre a leitura compatível com o domínio, mesmo que ela não seja a mais óbvia fora desse contexto.
+Casos já conhecidos onde isso é crítico (mas a regra vale para qualquer termo ambíguo, não só estes):
+${DOMAIN_NOTES}
+
 O método conecta dois conceitos ("${labelGi}" e "${labelEi}") através de um único CONCEITO INTERMEDIÁRIO (o "meio"), usando relações do tipo AOF:
 ${TIPOS_AOF.join(' | ')}
 
@@ -855,14 +934,12 @@ Regras de conteúdo:
 - Não invente relações fracas, genéricas ou forçadas só para preencher a resposta. Se a relação exigir mais de um passo intermediário óbvio ou for artificial, responda RELAÇÃO: NÃO.
 - O CONCEITO_MEIO deve ser um substantivo ou expressão curta, nunca uma frase.
 - Use os outros elementos do domínio apenas como contexto de fundo, não force conexão com eles.
-- Conceitos de meio já usados em outros pares deste grafo: ${meiosStr}. NÃO repita nenhum desses como CONCEITO_MEIO — proponha um termo diferente, específico pra esse par. Só repita um termo já usado se ele for literalmente o mesmo conceito exato (não apenas parecido), o que é raro.
-
-Notas de desambiguação do domínio (importante seguir à risca):
-${DOMAIN_NOTES}`;
+- Conceitos de meio já usados em outros pares deste grafo: ${meiosStr}. NÃO repita nenhum desses como CONCEITO_MEIO — proponha um termo diferente, específico pra esse par. Só repita um termo já usado se ele for literalmente o mesmo conceito exato (não apenas parecido), o que é raro.`;
 
   const userPrompt = `Domínio: ${domainContext || '(sem outros elementos ainda)'}
 
-Par a analisar: "${labelGi}" e "${labelEi}".`;
+Par a analisar: "${labelGi}" e "${labelEi}".
+Lembrete: antes de decidir a relação, confirme o sentido de cada termo do par usando o domínio acima — não o sentido mais comum da palavra fora desse contexto.`;
 
   const apiKey = window.APP_CONFIG?.MISTRAL_API_KEY;
   if (!apiKey) {
@@ -968,6 +1045,60 @@ function showAIError() {
   document.getElementById('ai-hint').style.display = 'none';
 }
 
+// Estado da seleção de palavras clicáveis da justificativa da IA —
+// reiniciado a cada novo par (ver renderClickableJustificativa).
+let _aiWordList = [];
+let _aiSelectedIdx = new Set();
+
+// Quebra o texto em palavras clicáveis (pontuação e espaços ficam como
+// texto normal, só a palavra em si vira <span> clicável). Clicar numa
+// palavra a adiciona/remove do campo "meio" — dá pra clicar em várias
+// pra montar um termo composto, na ordem em que aparecem no texto.
+function renderClickableJustificativa(text) {
+  const container = document.getElementById('ai-result-text');
+  container.innerHTML = '';
+  _aiWordList = [];
+  _aiSelectedIdx = new Set();
+
+  const tokens = text.split(/(\s+)/);
+  tokens.forEach(token => {
+    if (!token) return;
+    if (/^\s+$/.test(token)) {
+      container.appendChild(document.createTextNode(token));
+      return;
+    }
+    const m = token.match(/^([^\p{L}\p{N}]*)([\p{L}\p{N}][\p{L}\p{N}-]*)?([^\p{L}\p{N}]*)$/u);
+    if (!m || !m[2]) {
+      container.appendChild(document.createTextNode(token));
+      return;
+    }
+    const [, pre, word, pos] = m;
+    if (pre) container.appendChild(document.createTextNode(pre));
+    const span = document.createElement('span');
+    span.className = 'ai-word';
+    span.textContent = word;
+    const idx = _aiWordList.length;
+    _aiWordList.push(word);
+    span.addEventListener('click', () => toggleAIWord(idx, span));
+    container.appendChild(span);
+    if (pos) container.appendChild(document.createTextNode(pos));
+  });
+}
+
+function toggleAIWord(idx, span) {
+  if (_aiSelectedIdx.has(idx)) {
+    _aiSelectedIdx.delete(idx);
+    span.classList.remove('selected');
+  } else {
+    _aiSelectedIdx.add(idx);
+    span.classList.add('selected');
+  }
+  if (_aiSelectedIdx.size) {
+    const ordenado = [..._aiSelectedIdx].sort((a, b) => a - b).map(i => _aiWordList[i]);
+    document.getElementById('input-meio').value = ordenado.join(' ');
+  }
+}
+
 function showAIResult(parsed) {
   _setAIState('result');
 
@@ -975,7 +1106,7 @@ function showAIResult(parsed) {
   if (parsed.hasRelation && parsed.tipoAof) {
     displayText = `[${parsed.tipoAof}] ${displayText}`;
   }
-  document.getElementById('ai-result-text').textContent = displayText;
+  renderClickableJustificativa(displayText);
 
   const badge = document.getElementById('ai-relation-badge');
   if (parsed.hasRelation) {
@@ -991,6 +1122,12 @@ function showAIResult(parsed) {
   _aiLastMeio = parsed.hasRelation ? parsed.meio : null;
   _aiLastTipoAof = parsed.hasRelation ? parsed.tipoAof : null;
 
+  // Guarda o tipo AOF sugerido pela IA — aplicado automaticamente às
+  // arestas quando o par for confirmado. Não tem mais seletor antes de
+  // confirmar; pra revisar/trocar o tipo depois, é só clicar na aresta
+  // já criada no canvas.
+  _aiLastTipoAof = (parsed.hasRelation && TIPOS_AOF.includes(parsed.tipoAof)) ? parsed.tipoAof : null;
+
   // Checagem extra no cliente: mesmo com a instrução no prompt, a IA pode
   // ocasionalmente repetir um meio já existente no grafo. Se isso acontecer,
   // avisa em vez de preencher como se fosse um termo novo.
@@ -999,15 +1136,15 @@ function showAIResult(parsed) {
   );
 
   if (parsed.hasRelation && parsed.meio && jaExiste) {
-    hintEl.textContent = `⚠ A IA sugeriu "${parsed.meio}", mas esse termo já existe no grafo. Confira se faz sentido reaproveitar ou digite outro abaixo.`;
+    hintEl.textContent = `⚠ A IA sugeriu "${parsed.meio}", mas esse termo já existe no grafo. Confira se faz sentido reaproveitar, digite outro abaixo, ou clique nas palavras da análise acima pra montar um termo novo. Depois de confirmar, clique na aresta criada pra revisar o tipo AOF.`;
     hintEl.style.display = 'block';
     if (inputEl && !inputEl.classList.contains('is-extra')) inputEl.value = '';
   } else if (parsed.hasRelation && parsed.meio) {
-    hintEl.textContent = `A IA sugeriu "${parsed.meio}" como conceito do meio — ajuste se quiser antes de confirmar.`;
+    hintEl.textContent = `A IA sugeriu "${parsed.meio}" como conceito do meio (tipo AOF: ${_aiLastTipoAof || 'não identificado'}) — ajuste o termo se quiser, e depois de confirmar clique na aresta criada pra revisar o tipo AOF.`;
     hintEl.style.display = 'block';
     if (inputEl && !inputEl.classList.contains('is-extra')) inputEl.value = parsed.meio;
   } else if (parsed.hasRelation) {
-    hintEl.textContent = 'Leia a justificativa acima e digite abaixo o conceito que conecta os dois elementos.';
+    hintEl.textContent = 'Leia a justificativa acima e digite abaixo o conceito que conecta os dois elementos — ou clique nas palavras dela pra selecionar. O tipo AOF se escolhe depois, clicando na aresta criada.';
     hintEl.style.display = 'block';
   } else {
     hintEl.style.display = 'none';
@@ -1138,8 +1275,12 @@ async function updatePairUI() {
 
 function confirmPair() {
   if (finished) return;
-  const raw = document.getElementById('input-meio').value.trim();
+  const raw = document.getElementById('input-meio')?.value.trim();
   if (!raw) { advancePair(); return; }
+
+  // Tipo AOF sugerido pela IA pro par atual (se houver) — as arestas já
+  // saem com ele, mas dá pra revisar/trocar depois clicando na aresta.
+  const tipoAof = _aiLastTipoAof || null;
 
   // Support multiple meios separated by comma: A → m1 → m2 → ... → B
   const meios = raw.split(',').map(s => s.trim()).filter(Boolean);
@@ -1178,6 +1319,7 @@ function confirmPair() {
     getOrCreateEdge(nm.id, gi.id, _aiLastTipoAof);
   });
 
+  _aiLastTipoAof = null;
   advancePair();
 }
 
@@ -1315,6 +1457,56 @@ function resetAll() {
 document.getElementById('reset-btn').addEventListener('click', resetAll);
 document.getElementById('reset-btn2').addEventListener('click', resetAll);
 
+// ── Exportação para o Python (ponte WebFront → Main.py) ─────
+//
+// Formato combinado com "Python code/importar_grafo.py": grupos do
+// WebFront (teto/piso/relacionado/meio) são traduzidos lá pros papéis
+// que o Grafo.Nodes já usa (ceiling/floor/relevant/gerado). As arestas
+// já saem na mesma orientação ei→meio→gi que Adicionar_No() monta no
+// motor Python, então a reconstrução do lado de lá não precisa adivinhar
+// nada — só seguir a mesma direção. O tipo AOF de cada aresta (escolhido
+// no seletor ao lado do input do meio, manualmente ou pré-preenchido pela
+// IA) vai junto em "tipoAof".
+function buildSessionExport() {
+  return {
+    sphereM: {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      round,
+      finished,
+      domain: {
+        ceiling: nodes.filter(n => n.group === 'teto').map(n => n.label),
+        floor: nodes.filter(n => n.group === 'piso').map(n => n.label),
+        relevant: nodes.filter(n => n.group === 'relacionado').map(n => n.label),
+      },
+      nodes: nodes.map(n => ({
+        id: n.id,
+        label: n.label,
+        group: n.group, // 'teto' | 'piso' | 'relacionado' | 'meio'
+        tagNatureza: n.tagNatureza || null,
+        tagCaminho: n.tagCaminho || null,
+      })),
+      edges: edges.map(e => ({ from: e.from, to: e.to, tipoAof: e.tipoAof || null })),
+    },
+  };
+}
+
+function exportSessionJSON() {
+  const payload = buildSessionExport();
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  a.href = url;
+  a.download = `sphere-m-sessao-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('export-json-btn').addEventListener('click', exportSessionJSON);
+
 // ── Mouse ─────────────────────────────────────────────────
 
 function nodeAt(x, y) {
@@ -1323,6 +1515,26 @@ function nodeAt(x, y) {
     const hh = (nd.h || 30) / 2;
     return Math.abs(x - nd.x) <= hw && Math.abs(y - nd.y) <= hh;
   });
+}
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
+  t = Math.max(0, Math.min(1, t));
+  const projX = x1 + t * dx, projY = y1 + t * dy;
+  return Math.hypot(px - projX, py - projY);
+}
+
+function edgeAt(x, y, threshold = 8) {
+  for (let i = edges.length - 1; i >= 0; i--) {
+    const e = edges[i];
+    const a = nodes.find(n => n.id === e.from);
+    const b = nodes.find(n => n.id === e.to);
+    if (!a || !b) continue;
+    if (distToSegment(x, y, a.x, a.y, b.x, b.y) <= threshold) return e;
+  }
+  return null;
 }
 
 function getPos(e) {
@@ -1366,11 +1578,75 @@ canvas.addEventListener('mouseup', () => {
 
 canvas.addEventListener('mouseleave', () => { dragging = null; });
 
+canvas.addEventListener('click', e => {
+  const p = getPos(e);
+  if (nodeAt(p.x, p.y)) return; // clique em nó é tratado no dblclick/drag, não aqui
+  const edge = edgeAt(p.x, p.y);
+  if (edge) startEdgeEdit(edge, e.clientX, e.clientY);
+});
+
 // ── Edição inline de nós (duplo clique) ──────────────────
 
 let editingNode = null;
 let nodeEditInput = null;
 let nodeTagPanel = null;
+
+// ── Edição de tipo AOF da aresta (clique na aresta) ──────
+let editingEdge = null;
+let edgeAofSelect = null;
+
+function startEdgeEdit(edge, clientX, clientY) {
+  if (editingEdge) closeEdgeEdit();
+  if (editingNode) commitNodeEdit(); // não deixa os dois painéis abertos ao mesmo tempo
+  editingEdge = edge;
+
+  edgeAofSelect = document.createElement('select');
+  edgeAofSelect.title = 'Tipo AOF desta aresta';
+  edgeAofSelect.style.cssText = `
+    position: fixed; left: ${clientX + 6}px; top: ${clientY + 6}px;
+    z-index: 9999; font: 500 11px "Geist Mono", ui-monospace, monospace;
+    padding: 5px 8px; border-radius: 6px; min-width: 170px;
+    border: 1.5px solid var(--accent, #6d1fc2);
+    background: var(--surface, #faf9f6); color: var(--text, #1c1a17);
+    cursor: pointer; outline: none; box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  `;
+
+  [['', '— tipo AOF —'], ...TIPOS_AOF.map(t => [t, t])].forEach(([v, t]) => {
+    const opt = document.createElement('option');
+    opt.value = v; opt.textContent = t;
+    if ((edge.tipoAof || '') === v) opt.selected = true;
+    edgeAofSelect.appendChild(opt);
+  });
+
+  edgeAofSelect.addEventListener('change', () => {
+    edge.tipoAof = edgeAofSelect.value || null;
+    draw();
+  });
+  edgeAofSelect.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); closeEdgeEdit(); }
+  });
+
+  document.body.appendChild(edgeAofSelect);
+  edgeAofSelect.focus();
+
+  const outsideClickHandler = e => {
+    if (!editingEdge) return;
+    if (edgeAofSelect?.contains(e.target)) return;
+    closeEdgeEdit();
+  };
+  document.addEventListener('mousedown', outsideClickHandler, true);
+  edgeAofSelect._cleanup = () => document.removeEventListener('mousedown', outsideClickHandler, true);
+}
+
+function closeEdgeEdit() {
+  if (edgeAofSelect) {
+    edgeAofSelect._cleanup?.();
+    edgeAofSelect.remove();
+  }
+  edgeAofSelect = null;
+  editingEdge = null;
+  draw();
+}
 
 const COR_CAMINHO = {
   positivo: '#0a8f3c',
@@ -1570,6 +1846,7 @@ function cancelEdgeEdit() {
 
 function startNodeEdit(node) {
   if (editingNode) commitNodeEdit();
+  if (editingEdge) closeEdgeEdit();
   editingNode = node;
 
   const rect = canvas.getBoundingClientRect();
@@ -1630,7 +1907,7 @@ function startNodeEdit(node) {
   const selNatureza = document.createElement('select');
   selNatureza.title = 'Tag de natureza';
   selNatureza.style.cssText = selStyle;
-  [['', '— natureza'], ['Classe', 'Classe'], ['Objeto', 'Objeto']].forEach(([v, t]) => {
+  [['', '— natureza'], ...NATUREZAS.map(n => [n, n])].forEach(([v, t]) => {
     const opt = document.createElement('option');
     opt.value = v; opt.textContent = t;
     if (node.tagNatureza === v || (!node.tagNatureza && v === '')) opt.selected = true;
@@ -1739,10 +2016,11 @@ function commitNodeEdit() {
     const novoCaminho  = nodeTagPanel._selCaminho.value || null;
     editingNode.tagNatureza = novaNatureza;
     editingNode.tagCaminho  = novoCaminho;
-    // A natureza pode ter acabado de mudar (ex: nó marcado como Classe
-    // depois que já estava conectado a outros) — reavalia o tipo das
-    // arestas ligadas a ele contra a regra classe/objeto.
-    reavaliarTiposDeArestas();
+    // Marca como manual: sem isso, tagCaminhoManual fica 'false' e o nó
+    // (1) nunca vira semente para propagatePathTag(), e (2) tem sua tag
+    // apagada de volta pra null na primeira propagação seguinte, porque
+    // propagatePathTag() só preserva tags de nós com tagCaminhoManual = true.
+    editingNode.tagCaminhoManual = !!novoCaminho;
     nodeTagPanel._cleanup?.();
     nodeTagPanel.remove();
     nodeTagPanel = null;

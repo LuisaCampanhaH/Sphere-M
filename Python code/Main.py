@@ -16,6 +16,12 @@ class No_Grafo:
         self.achou_teto   = False
         self.achou_piso   = False
         self.papel: str   = "gerado"
+        # Tags opcionais (só vêm preenchidas quando o grafo é importado de
+        # uma sessão do WebFront — ver Python code/importar_grafo.py).
+        # 'Classe' | 'Objeto' | 'Atributo' | 'Instância' | None
+        self.tag_natureza: str | None = None
+        # 'positivo' | 'negativo' | 'ambos' | None
+        self.tag_caminho: str | None = None
 
 
 class Grafo:

@@ -20,7 +20,7 @@
     <div id="canvas-side">
       <div id="canvas-wrap">
         <canvas id="graph-canvas"></canvas>
-        <div id="canvas-overlay-hint">drag · duplo clique para editar · delete</div>
+        <div id="canvas-overlay-hint">drag · duplo clique no nó pra editar · clique na aresta pro tipo AOF · delete</div>
       </div>
     </div>
 
@@ -209,7 +209,10 @@
           <div class="legend-item"><span class="legend-dot" style="background:#0a8f3c;"></span>caminho positivo</div>
           <div class="legend-item"><span class="legend-dot" style="background:#c1121f;"></span>caminho negativo</div>
           <div class="legend-item"><span class="legend-dot" style="background:#6a2ca5;"></span>caminho ambos</div>
-          <div class="legend-item">■ Classe &nbsp; ● Objeto</div>
+          <div class="legend-item">■ Classe</div>
+          <div class="legend-item">● Objeto</div>
+          <div class="legend-item">▲ Atributo</div>
+          <div class="legend-item">◆ Instância</div>
         </div>
       </div>
 
@@ -217,6 +220,13 @@
       <div id="tag-audit">
         <div class="legend-title">auditoria de caminho</div>
         <div id="tag-audit-panel"></div>
+      </div>
+
+      <!-- Exportação para o motor Python (métricas/visualização) -->
+      <div id="export-section">
+        <div class="legend-title">ponte com o Python</div>
+        <button id="export-json-btn" class="btn-ghost" style="width:100%">⇩ Exportar sessão (JSON)</button>
+        <p id="export-hint">gera um .json com nós, arestas e tags — leia com <code>Python code/importar_grafo.py</code> pra calcular raio, densidade, eficiência e produtividade, ou gerar a visualização pyvis.</p>
       </div>
 
     </div><!-- /sidebar -->

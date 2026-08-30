@@ -109,9 +109,58 @@ function createNode(label, group, x, y) {
   return node;
 }
 
-function getOrCreateEdge(idA, idB) {
+// ── Regra de tipo de relação por natureza (Classe/Objeto) ─────────────
+// Fixado por enquanto (sem checar dependência de herança — fica para
+// refinar depois): classe & classe sempre "é-um"; classe & objeto também
+// "é-um". Objeto & objeto, ou quando algum dos dois lados ainda não tem
+// natureza definida, não força nada — a aresta fica com o tipo que a IA
+// sugeriu (ou null, se nenhum dos dois existir).
+function tipoRelacaoPorNatureza(nodeA, nodeB) {
+  const a = nodeA?.tagNatureza, b = nodeB?.tagNatureza;
+  if (!a || !b) return null;
+  if (a === 'Classe' && b === 'Classe') return 'é-um';
+  if ((a === 'Classe' && b === 'Objeto') || (a === 'Objeto' && b === 'Classe')) return 'é-um';
+  return null; // objeto & objeto — sem regra fixa ainda
+}
+
+// Re-checa o tipo de todas as arestas do grafo contra a regra de
+// natureza acima. Precisa ser chamado sempre que a tagNatureza de um nó
+// muda depois que arestas ligadas a ele já existiam (ex: usuário marca
+// um nó como Classe só depois de já ter conectado ele a outros). Só
+// sobrescreve quando a regra realmente força um tipo; do contrário
+// mantém o que já estava (sugestão da IA ou null).
+function reavaliarTiposDeArestas() {
+  edges.forEach(e => {
+    if (e.tipoManual) return; // usuário fixou esse tipo à mão — não sobrescreve
+    const a = nodes.find(n => n.id === e.from);
+    const b = nodes.find(n => n.id === e.to);
+    const forcado = tipoRelacaoPorNatureza(a, b);
+    if (forcado) e.tipo = forcado;
+  });
+}
+
+// Cria (ou reaproveita) uma aresta DIRECIONADA idA → idB, com um tipo de
+// relação AOF opcional (ex: "é-um", "é-parte-de"). O tipo vem de três
+// fontes possíveis, nessa ordem de prioridade:
+//   1) edição manual do humano (edge.tipoManual === true) — sempre vence
+//   2) regra fixa de natureza (classe/objeto) — vence se aplicável
+//   3) tipoSugerido — normalmente o TIPO_AOF que a IA propôs pro par
+function getOrCreateEdge(idA, idB, tipoSugerido) {
+  const nodeA = nodes.find(n => n.id === idA);
+  const nodeB = nodes.find(n => n.id === idB);
+  const tipoForcado = tipoRelacaoPorNatureza(nodeA, nodeB);
+  const tipo = tipoForcado || tipoSugerido || null;
+
   const exists = edges.find(e => e.from === idA && e.to === idB);
-  if (!exists) edges.push({ from: idA, to: idB });
+  if (exists) {
+    if (exists.tipoManual) return exists; // travado pelo humano — não mexe
+    if (tipoForcado) exists.tipo = tipoForcado;
+    else if (!exists.tipo && tipo) exists.tipo = tipo;
+    return exists;
+  }
+  const edge = { from: idA, to: idB, tipo, tipoManual: false };
+  edges.push(edge);
+  return edge;
 }
 
 function removeEdge(idA, idB) {
@@ -457,7 +506,11 @@ function draw() {
     ctx.closePath();
   }
 
-  // ── Draw edges ──────────────────────────────────────────────
+  // ── Draw edges (direcionadas: linha + seta + rótulo do tipo AOF) ───────
+  // O grafo agora é direcionado de fato: toda aresta guarda de onde saiu
+  // (from) e onde chegou (to), mais opcionalmente um `tipo` (um dos
+  // TIPOS_AOF, ex: "é-um", "é-parte-de") decidido pela IA no momento da
+  // conexão ou forçado pela regra de natureza (tipoRelacaoPorNatureza).
   // Se algum dos dois nós da aresta tem tag de caminho (positivo/negativo/
   // ambos), a linha herda essa cor — assim dá pra ver o trajeto colorido
   // pelo grafo, não só a borda do nó isolado. Sem tag em nenhum dos dois
@@ -481,12 +534,60 @@ function draw() {
       edgeWidth = 2.5;
     }
 
+    // Ponto onde a linha encosta na borda do nó de destino (aproximação
+    // elíptica inscrita na caixa do nó), pra seta não ficar escondida
+    // atrás do retângulo do nó.
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
+    const ux = dx / dist, uy = dy / dist;
+    const rx = (b.w || 64) / 2, ry = (b.h || 30) / 2;
+    const denom = Math.sqrt((ux * ux) / (rx * rx) + (uy * uy) / (ry * ry)) || 1;
+    const tipX = b.x - ux / denom, tipY = b.y - uy / denom;
+
     ctx.strokeStyle = edgeColor;
     ctx.lineWidth = edgeWidth;
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
+    ctx.lineTo(tipX, tipY);
     ctx.stroke();
+
+    // Seta indicando a direção da relação (a → b).
+    const ARROW_LEN = 9, ARROW_W = 6;
+    const backX = tipX - ux * ARROW_LEN, backY = tipY - uy * ARROW_LEN;
+    const perpX = -uy, perpY = ux;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(backX + perpX * ARROW_W / 2, backY + perpY * ARROW_W / 2);
+    ctx.lineTo(backX - perpX * ARROW_W / 2, backY - perpY * ARROW_W / 2);
+    ctx.closePath();
+    ctx.fillStyle = edgeColor;
+    ctx.fill();
+
+    // Rótulo do tipo de relação AOF (ex: "é-um", "é-parte-de"), quando
+    // definido. Fica num pill pequeno no meio da aresta.
+    if (e.tipo) {
+      const midX = (a.x + tipX) / 2, midY = (a.y + tipY) / 2;
+      ctx.save();
+      ctx.font = '500 8px "Geist Mono", ui-monospace, monospace';
+      const textW = ctx.measureText(e.tipo).width;
+      const padX = 4, padY = 2;
+      roundRect(midX - textW / 2 - padX, midY - 6 - padY, textW + padX * 2, 12 + padY * 2, 3);
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#faf9f6';
+      ctx.globalAlpha = 0.92;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = edgeColor;
+      ctx.lineWidth = 1;
+      if (e.tipoManual) ctx.setLineDash([2, 2]); // tracejado = tipo fixado à mão
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = edgeColor;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(e.tipo, midX, midY);
+      ctx.restore();
+    }
+
     ctx.restore();
   });
 
@@ -709,8 +810,9 @@ function pathToString(startId, endId) {
 
 let _aiCurrentPair = null;
 let _aiLastMeio = null;
+let _aiLastTipoAof = null;
 
-// Tipos de relação (AOF) do método Sphere-M — mesma referência usada na CLI (Main.py).
+// Tipos de relação (AOF) 
 const TIPOS_AOF = [
   'é-um', 'é-parte-de', 'é-composto-por', 'é-uma-variação-de',
   'é-um-atributo-de', 'é-um-componente-de', 'é-um-elemento-de', 'é-caracterizado-por',
@@ -887,6 +989,7 @@ function showAIResult(parsed) {
   const hintEl = document.getElementById('ai-hint');
   const inputEl = document.getElementById('input-meio');
   _aiLastMeio = parsed.hasRelation ? parsed.meio : null;
+  _aiLastTipoAof = parsed.hasRelation ? parsed.tipoAof : null;
 
   // Checagem extra no cliente: mesmo com a instrução no prompt, a IA pode
   // ocasionalmente repetir um meio já existente no grafo. Se isso acontecer,
@@ -1057,7 +1160,10 @@ function confirmPair() {
   if (edgeExists(gi.id, ei.id)) removeEdge(gi.id, ei.id);
   if (edgeExists(ei.id, gi.id)) removeEdge(ei.id, gi.id);
 
-  // Build siblings: each meio connects independently to ei and gi (not to each other)
+  // Build siblings: each meio connects independently to ei and gi (not to each other).
+  // O tipo de relação AOF de cada aresta vem do que a IA sugeriu pra esse
+  // par (_aiLastTipoAof) — mas é sobrescrito pela regra fixa de natureza
+  // (classe/objeto) dentro de getOrCreateEdge, se aplicável.
   meios.forEach((label, idx) => {
     let nm = findNode(label);
     if (!nm) {
@@ -1068,8 +1174,8 @@ function confirmPair() {
       tempG.add(label);
       E.add(label);
     }
-    getOrCreateEdge(ei.id, nm.id);
-    getOrCreateEdge(nm.id, gi.id);
+    getOrCreateEdge(ei.id, nm.id, _aiLastTipoAof);
+    getOrCreateEdge(nm.id, gi.id, _aiLastTipoAof);
   });
 
   advancePair();
@@ -1245,7 +1351,9 @@ canvas.addEventListener('mousemove', e => {
     dragging.x = Math.max(dragging.w / 2 + 4, Math.min(W - dragging.w / 2 - 4, p.x - dragOff.x));
     dragging.y = Math.max(dragging.h / 2 + 4, Math.min(H - dragging.h / 2 - 4, p.y - dragOff.y));
   } else {
-    canvas.style.cursor = nodeAt(p.x, p.y) ? 'grab' : 'default';
+    const hoveredNode = nodeAt(p.x, p.y);
+    if (hoveredNode) canvas.style.cursor = 'grab';
+    else canvas.style.cursor = edgeAt(p.x, p.y) ? 'pointer' : 'default';
   }
 });
 
@@ -1269,6 +1377,196 @@ const COR_CAMINHO = {
   negativo: '#c1121f',
   ambos: '#6a2ca5',
 };
+
+// ── Edição inline de arestas (duplo clique) — tipo AOF manual ────────
+// Mesmo padrão do editor de nós: duplo clique perto de uma aresta abre um
+// seletor com os TIPOS_AOF pra corrigir o tipo à mão, caso a IA ou a regra
+// de natureza tenham errado. 
+
+let editingEdge = null;
+let edgeTagPanel = null;
+
+function distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq ? ((px - ax) * dx + (py - ay) * dy) / lenSq : 0;
+  t = Math.max(0, Math.min(1, t));
+  const cx = ax + t * dx, cy = ay + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+function edgeAt(x, y) {
+  const THRESH = 10;
+  let best = null, bestDist = THRESH;
+  edges.forEach(e => {
+    const a = nodes.find(n => n.id === e.from), b = nodes.find(n => n.id === e.to);
+    if (!a || !b) return;
+    const d = distToSegment(x, y, a.x, a.y, b.x, b.y);
+    if (d < bestDist) { bestDist = d; best = e; }
+  });
+  return best;
+}
+
+function startEdgeEdit(edge, pos) {
+  if (editingNode) commitNodeEdit();
+  if (editingEdge) commitEdgeEdit();
+  editingEdge = edge;
+
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = rect.width / W;
+  const scaleY = rect.height / H;
+
+  const a = nodes.find(n => n.id === edge.from), b = nodes.find(n => n.id === edge.to);
+
+  edgeTagPanel = document.createElement('div');
+  edgeTagPanel.style.position = 'fixed';
+  edgeTagPanel.style.left = (rect.left + pos.x * scaleX - 90) + 'px';
+  edgeTagPanel.style.top  = (rect.top  + pos.y * scaleY - 10) + 'px';
+  edgeTagPanel.style.zIndex = '9999';
+  edgeTagPanel.style.boxShadow = '0 4px 14px rgba(0,0,0,0.18)';
+  edgeTagPanel.style.display = 'flex';
+  edgeTagPanel.style.flexDirection = 'column';
+  edgeTagPanel.style.gap = '6px';
+  edgeTagPanel.style.padding = '8px';
+  edgeTagPanel.style.width = '190px';
+  edgeTagPanel.style.border = '1px solid var(--border2, #ccc7ba)';
+  edgeTagPanel.style.borderRadius = 'var(--radius-sm, 8px)';
+  edgeTagPanel.style.background = 'var(--surface, #faf9f6)';
+
+  const titleEl = document.createElement('div');
+  titleEl.textContent = `${a?.label ?? '?'} → ${b?.label ?? '?'}`;
+  titleEl.style.cssText = 'font:600 10px "Geist Mono", ui-monospace, monospace; opacity:0.75; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+
+  const selStyle = `
+    font: 500 11px "Geist Mono", ui-monospace, monospace;
+    padding: 4px 6px; border-radius: 6px;
+    border: 1px solid var(--border2, #ccbac5);
+    background: var(--surface2, #f3f1ec); color: var(--text, #1c1a17);
+    cursor: pointer; outline: none;
+  `;
+
+  const selTipo = document.createElement('select');
+selTipo.title = 'Tipo de relação (AOF)';
+selTipo.style.cssText = selStyle;
+const opts = [['', '— sem tipo —'], ...TIPOS_AOF.map(t => [t, t])];
+opts.forEach(([v, t]) => {
+  const opt = document.createElement('option');
+  opt.value = v; opt.textContent = t;
+  if ((edge.tipo || '') === v) opt.selected = true;
+  selTipo.appendChild(opt);
+});
+
+// Inserir manualmente
+const inputManual = document.createElement('input');
+inputManual.type = 'text';
+inputManual.placeholder = 'Ou digite outro FOA';
+inputManual.style.cssText = `
+  font: 500 11px "Geist Mono", ui-monospace, monospace;
+  padding: 4px 6px; 
+  border-radius: 6px;
+  border: 1px solid var(--border2, #ccc7ba);
+  background: var(--bg-1, #ffffff); 
+  color: var(--text-1, #1a1a1a);
+  outline: none;
+  width: 150px;
+`;
+
+const ehTipoPadrao = TIPOS_AOF.includes(edge.tipo);
+if (!ehTipoPadrao && edge.tipo) {
+  inputManual.value = edge.tipo;
+  selTipo.value = '';
+}
+
+selTipo.addEventListener('change', () => {
+  if (selTipo.value !== '') {
+    inputManual.value = '';
+    edge.tipo = selTipo.value;
+    edge.tipoManual = true;
+    commitEdgeEdit(true);
+  }
+});
+
+inputManual.addEventListener('change', () => {
+  const valor = inputManual.value.trim();
+  if (valor !== '') {
+    selTipo.value = ''; 
+    edge.tipo = valor;
+    edge.tipoManual = true;
+    commitEdgeEdit(true);
+  }
+});
+
+  const btnRow = document.createElement('div');
+  btnRow.style.display = 'flex';
+  btnRow.style.gap = '6px';
+
+  const okBtn = document.createElement('button');
+  okBtn.type = 'button';
+  okBtn.textContent = 'OK';
+  okBtn.style.cssText = `
+    flex: 1; font: 600 11px "Geist Mono", ui-monospace, monospace;
+    padding: 5px 6px; border-radius: 6px; border: none; cursor: pointer;
+    background: var(--accent, #6d1fc2); color: #fff;
+  `;
+  okBtn.addEventListener('click', () => commitEdgeEdit());
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.textContent = 'Cancelar';
+  cancelBtn.style.cssText = `
+    flex: 1; font: 500 11px "Geist Mono", ui-monospace, monospace;
+    padding: 5px 6px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border2, #ccc7ba);
+    background: var(--surface2, #f3f1ec); color: var(--text-2, #4a463e);
+  `;
+  cancelBtn.addEventListener('click', () => cancelEdgeEdit());
+
+  btnRow.appendChild(okBtn);
+  btnRow.appendChild(cancelBtn);
+
+  edgeTagPanel.appendChild(titleEl);
+  edgeTagPanel.appendChild(selTipo);
+  edgeTagPanel.appendChild(inputManual);
+  edgeTagPanel.appendChild(btnRow);
+  document.body.appendChild(edgeTagPanel);
+  edgeTagPanel._selTipo = selTipo;
+
+  selTipo.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter')  { ev.preventDefault(); commitEdgeEdit(); }
+    if (ev.key === 'Escape') { ev.preventDefault(); cancelEdgeEdit(); }
+  });
+  selTipo.focus();
+
+  const outsideClickHandler = ev => {
+    if (!editingEdge) return;
+    if (edgeTagPanel?.contains(ev.target)) return;
+    commitEdgeEdit();
+  };
+  document.addEventListener('mousedown', outsideClickHandler, true);
+  edgeTagPanel._cleanup = () => document.removeEventListener('mousedown', outsideClickHandler, true);
+}
+
+function commitEdgeEdit(skipReadSelect) {
+  if (!editingEdge) return;
+  if (!skipReadSelect && edgeTagPanel) {
+    const novo = edgeTagPanel._selTipo.value || null;
+    editingEdge.tipo = novo;
+    editingEdge.tipoManual = true; // trava: reavaliarTiposDeArestas não sobrescreve mais
+  }
+  edgeTagPanel?._cleanup?.();
+  edgeTagPanel?.remove();
+  edgeTagPanel = null;
+  editingEdge = null;
+  draw();
+}
+
+function cancelEdgeEdit() {
+  edgeTagPanel?._cleanup?.();
+  edgeTagPanel?.remove();
+  edgeTagPanel = null;
+  editingEdge = null;
+  draw();
+}
 
 function startNodeEdit(node) {
   if (editingNode) commitNodeEdit();
@@ -1441,6 +1739,10 @@ function commitNodeEdit() {
     const novoCaminho  = nodeTagPanel._selCaminho.value || null;
     editingNode.tagNatureza = novaNatureza;
     editingNode.tagCaminho  = novoCaminho;
+    // A natureza pode ter acabado de mudar (ex: nó marcado como Classe
+    // depois que já estava conectado a outros) — reavalia o tipo das
+    // arestas ligadas a ele contra a regra classe/objeto.
+    reavaliarTiposDeArestas();
     nodeTagPanel._cleanup?.();
     nodeTagPanel.remove();
     nodeTagPanel = null;
@@ -1466,6 +1768,12 @@ canvas.addEventListener('dblclick', e => {
   if (node) {
     e.preventDefault();
     startNodeEdit(node);
+    return;
+  }
+  const edge = edgeAt(p.x, p.y);
+  if (edge) {
+    e.preventDefault();
+    startEdgeEdit(edge, p);
   }
 });
 

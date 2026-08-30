@@ -102,7 +102,7 @@ function createNode(label, group, x, y) {
     linkedToCeiling: false,
     linkedToFloor: false,
     // ── Dupla tag (extensão da IC) ──
-    tagNatureza: null,  // 'Classe' | 'Objeto' | null
+    tagNatureza: null,  // 'Classe' | 'Objeto' | 'Atributo' | 'Instância' | null
     tagCaminho: null,   // 'positivo' | 'negativo' | 'ambos' | null
     tagCaminhoManual: false, // true = humano marcou este nó direto no editor
                               // false = valor atual veio (ou pode vir) da propagação automática
@@ -160,11 +160,14 @@ function propagateMarks() {
   }
 }
 
-// ── Dupla tag: natureza (Classe/Objeto) + caminho (positivo/negativo/ambos) ──
+// ── Dupla tag: natureza (Classe/Objeto/Atributo/Instância) + caminho (positivo/negativo/ambos) ──
 //
 // tagNatureza NÃO se propaga: é uma característica do próprio elemento
-// (Classe = conceito geral, Objeto = ocorrência concreta), decidida
-// diretamente pelo humano no editor do nó.
+// (Classe = conceito geral, Objeto = entidade concreta do domínio,
+// Atributo = propriedade/característica de algo, Instância = ocorrência
+// específica de uma classe), decidida diretamente pelo humano no editor do nó.
+const NATUREZAS = ['Classe', 'Objeto', 'Atributo', 'Instância'];
+const SIMBOLOS_NATUREZA = { Classe: '■', Objeto: '●', Atributo: '▲', 'Instância': '◆' };
 //
 // tagCaminho: HISTÓRICO -- a primeira versão inundava a tag pelo grafo do
 // mesmo jeito que linkedToCeiling/linkedToFloor (flood: todo vizinho de um
@@ -297,7 +300,8 @@ function isGraphComplete() {
 //      ou alguém está só listando fatores de um lado só?
 function auditTags() {
   const contagem = { positivo: 0, negativo: 0, ambos: 0, semTag: 0 };
-  const ambosPorNatureza = { Classe: [], Objeto: [], semNatureza: [] };
+  const ambosPorNatureza = { semNatureza: [] };
+  NATUREZAS.forEach(nat => { ambosPorNatureza[nat] = []; });
 
   nodes.forEach(nd => {
     if (nd.tagCaminho === 'positivo') contagem.positivo++;
@@ -342,13 +346,15 @@ function renderAuditPanel() {
       desequilíbrio pos/neg: <b>${desqStr}</b>${desqAlerta ? ' ⚠ possível viés' : ''}
     </div>`;
 
-  const classesAmbos = ambosPorNatureza.Classe;
-  if (classesAmbos.length) {
+  NATUREZAS.concat('semNatureza').forEach(nat => {
+    const lista = ambosPorNatureza[nat];
+    if (!lista.length) return;
+    const rotulo = nat === 'semNatureza' ? 'nós sem natureza definida' : `${nat.toLowerCase()}s`;
     html += `<div class="audit-row audit-list">
-      <span>classes marcadas "ambos" (revisar se é papel duplo real):</span>
-      <ul>${classesAmbos.map(l => `<li>${l}</li>`).join('')}</ul>
+      <span>${rotulo} marcados "ambos" (revisar se é papel duplo real):</span>
+      <ul>${lista.map(l => `<li>${l}</li>`).join('')}</ul>
     </div>`;
-  }
+  });
 
   el.innerHTML = html;
 }
@@ -658,14 +664,14 @@ function draw() {
       });
     }
 
-    // ── Selo de natureza (Classe/Objeto) — extensão da IC ──
+    // ── Selo de natureza (Classe/Objeto/Atributo/Instância) — extensão da IC ──
     if (nd.tagNatureza) {
       ctx.save();
       ctx.font = '600 10px "Geist Mono", ui-monospace, monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = c.stroke;
-      const simbolo = nd.tagNatureza === 'Classe' ? '■' : '●';
+      const simbolo = SIMBOLOS_NATUREZA[nd.tagNatureza] || '●';
       ctx.fillText(simbolo, nx + nw - 10, ny + 10);
       ctx.restore();
     }
@@ -782,10 +788,12 @@ const TIPOS_AOF = [
   'é-um-atributo-de', 'é-um-componente-de', 'é-um-elemento-de', 'é-caracterizado-por',
 ];
 
-// Notas de desambiguação do domínio — termos que a IA poderia interpretar
-// errado por causa de outros sentidos mais comuns na língua. Editar aqui
-// se o domínio mudar ou surgirem novas ambiguidades.
-const DOMAIN_NOTES = `- "Natal", "pré-natal" e "pós-natal" aqui se referem ao contexto de mortalidade/natalidade (gravidez, parto, período neonatal) — NUNCA ao feriado de Natal (25 de dezembro). Trate esses termos exclusivamente como fases do ciclo gestacional/perinatal.`;
+// Notas de desambiguação do domínio — exemplos concretos de termos que a IA
+// já confundiu com outro sentido mais comum na língua portuguesa. A regra
+// geral (ver systemPrompt) já cobre qualquer ambiguidade nova; isto aqui é
+// só reforço pontual pra casos que já se mostraram problemáticos na prática.
+// Editar/ampliar esta lista sempre que surgir uma nova confusão recorrente.
+const DOMAIN_NOTES = `- "Natal", "pré-natal" e "pós-natal": aqui SEMPRE se referem ao contexto de mortalidade/natalidade (gravidez, parto, período neonatal) — NUNCA ao feriado de Natal (25 de dezembro). Trate esses termos exclusivamente como fases do ciclo gestacional/perinatal, mesmo que a palavra "Natal" sozinha remeta ao feriado no uso cotidiano.`;
 
 async function callAI(labelGi, labelEi) {
   // Contexto do domínio: só os outros elementos, sem repetir o par atual
@@ -803,6 +811,11 @@ async function callAI(labelGi, labelEi) {
 
   const systemPrompt = `Você é um ontólogo aplicando o método Sphere-M de construção de grafos de conhecimento.
 
+REGRA MAIS IMPORTANTE, aplique-a antes de qualquer outra coisa — DESAMBIGUAÇÃO DE TERMOS:
+Muitas palavras do português têm mais de um sentido possível. Você NUNCA deve assumir o sentido mais comum ou mais frequente de uma palavra no uso cotidiano. Para CADA termo do par abaixo, primeiro decida qual sentido faz sentido dentro do domínio informado (a lista de "Domínio" no final e os outros conceitos já usados no grafo) — só depois de fixar esse sentido, avalie a relação. Se um termo puder ser lido de duas formas diferentes, escolha sempre a leitura compatível com o domínio, mesmo que ela não seja a mais óbvia fora desse contexto.
+Casos já conhecidos onde isso é crítico (mas a regra vale para qualquer termo ambíguo, não só estes):
+${DOMAIN_NOTES}
+
 O método conecta dois conceitos ("${labelGi}" e "${labelEi}") através de um único CONCEITO INTERMEDIÁRIO (o "meio"), usando relações do tipo AOF:
 ${TIPOS_AOF.join(' | ')}
 
@@ -819,14 +832,12 @@ Regras de conteúdo:
 - Não invente relações fracas, genéricas ou forçadas só para preencher a resposta. Se a relação exigir mais de um passo intermediário óbvio ou for artificial, responda RELAÇÃO: NÃO.
 - O CONCEITO_MEIO deve ser um substantivo ou expressão curta, nunca uma frase.
 - Use os outros elementos do domínio apenas como contexto de fundo, não force conexão com eles.
-- Conceitos de meio já usados em outros pares deste grafo: ${meiosStr}. NÃO repita nenhum desses como CONCEITO_MEIO — proponha um termo diferente, específico pra esse par. Só repita um termo já usado se ele for literalmente o mesmo conceito exato (não apenas parecido), o que é raro.
-
-Notas de desambiguação do domínio (importante seguir à risca):
-${DOMAIN_NOTES}`;
+- Conceitos de meio já usados em outros pares deste grafo: ${meiosStr}. NÃO repita nenhum desses como CONCEITO_MEIO — proponha um termo diferente, específico pra esse par. Só repita um termo já usado se ele for literalmente o mesmo conceito exato (não apenas parecido), o que é raro.`;
 
   const userPrompt = `Domínio: ${domainContext || '(sem outros elementos ainda)'}
 
-Par a analisar: "${labelGi}" e "${labelEi}".`;
+Par a analisar: "${labelGi}" e "${labelEi}".
+Lembrete: antes de decidir a relação, confirme o sentido de cada termo do par usando o domínio acima — não o sentido mais comum da palavra fora desse contexto.`;
 
   const apiKey = window.APP_CONFIG?.MISTRAL_API_KEY;
   if (!apiKey) {
@@ -1275,6 +1286,61 @@ function resetAll() {
 document.getElementById('reset-btn').addEventListener('click', resetAll);
 document.getElementById('reset-btn2').addEventListener('click', resetAll);
 
+// ── Exportação para o Python (ponte WebFront → Main.py) ─────
+//
+// Formato combinado com "Python code/importar_grafo.py": grupos do
+// WebFront (teto/piso/relacionado/meio) são traduzidos lá pros papéis
+// que o Grafo.Nodes já usa (ceiling/floor/relevant/gerado). As arestas
+// já saem na mesma orientação ei→meio→gi que Adicionar_No() monta no
+// motor Python, então a reconstrução do lado de lá não precisa adivinhar
+// nada — só seguir a mesma direção.
+//
+// Limitação atual: o tipo AOF de cada aresta não é guardado por aresta
+// aqui no WebFront (só aparece de passagem no texto da IA) — por isso
+// "tipoAof" sempre exporta como null. Isso não afeta raio/densidade/
+// eficiência/produtividade (que não dependem do tipo da relação), só
+// deixa a legenda das arestas em branco na visualização pyvis por
+// enquanto.
+function buildSessionExport() {
+  return {
+    sphereM: {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      round,
+      finished,
+      domain: {
+        ceiling: nodes.filter(n => n.group === 'teto').map(n => n.label),
+        floor: nodes.filter(n => n.group === 'piso').map(n => n.label),
+        relevant: nodes.filter(n => n.group === 'relacionado').map(n => n.label),
+      },
+      nodes: nodes.map(n => ({
+        id: n.id,
+        label: n.label,
+        group: n.group, // 'teto' | 'piso' | 'relacionado' | 'meio'
+        tagNatureza: n.tagNatureza || null,
+        tagCaminho: n.tagCaminho || null,
+      })),
+      edges: edges.map(e => ({ from: e.from, to: e.to, tipoAof: null })),
+    },
+  };
+}
+
+function exportSessionJSON() {
+  const payload = buildSessionExport();
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  a.href = url;
+  a.download = `sphere-m-sessao-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('export-json-btn').addEventListener('click', exportSessionJSON);
+
 // ── Mouse ─────────────────────────────────────────────────
 
 function nodeAt(x, y) {
@@ -1398,7 +1464,7 @@ function startNodeEdit(node) {
   const selNatureza = document.createElement('select');
   selNatureza.title = 'Tag de natureza';
   selNatureza.style.cssText = selStyle;
-  [['', '— natureza'], ['Classe', 'Classe'], ['Objeto', 'Objeto']].forEach(([v, t]) => {
+  [['', '— natureza'], ...NATUREZAS.map(n => [n, n])].forEach(([v, t]) => {
     const opt = document.createElement('option');
     opt.value = v; opt.textContent = t;
     if (node.tagNatureza === v || (!node.tagNatureza && v === '')) opt.selected = true;

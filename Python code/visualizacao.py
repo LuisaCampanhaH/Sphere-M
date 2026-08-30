@@ -48,6 +48,15 @@ def desenhar_grafo(grafo):
         piso_str = "V" if no.achou_piso else "X"
         titulo   = f"{no.valor}\npapel: {papel}\nteto: {teto_str}  piso: {piso_str}"
 
+        # Tags vindas de uma sessão do WebFront (natureza/caminho) —
+        # ausentes em grafos construídos direto pelo CLI do Main.py.
+        tag_natureza = getattr(no, "tag_natureza", None)
+        tag_caminho  = getattr(no, "tag_caminho", None)
+        if tag_natureza:
+            titulo += f"\nnatureza: {tag_natureza}"
+        if tag_caminho:
+            titulo += f"\ncaminho: {tag_caminho}"
+
         net.add_node(
             no.valor,
             label=no.valor,

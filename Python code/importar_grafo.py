@@ -82,8 +82,10 @@ def Carregar_De_Json(caminho: str) -> Grafo:
             destino.vizinhos_inv.append(origem)
 
         # FAO: usado só pela visualização pyvis (rótulo/tooltip da aresta).
-        # O WebFront ainda não persiste o tipo AOF por aresta, então "peso"
-        # vem vazio até essa lacuna ser fechada do lado do WebFront.
+        # "tipoAof" vem do seletor de tipo AOF do WebFront (manual ou
+        # pré-preenchido pela sugestão da IA); fica vazio só em sessões
+        # exportadas antes dessa mudança, ou se o par foi confirmado sem
+        # selecionar um tipo.
         grafo.FAO.append((origem.valor, destino.valor, e.get("tipoAof") or ""))
 
     grafo._Propagar_Marcas()

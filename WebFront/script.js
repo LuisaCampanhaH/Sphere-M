@@ -111,9 +111,13 @@ function createNode(label, group, x, y) {
   return node;
 }
 
-function getOrCreateEdge(idA, idB) {
+function getOrCreateEdge(idA, idB, tipoAof) {
   const exists = edges.find(e => e.from === idA && e.to === idB);
-  if (!exists) edges.push({ from: idA, to: idB });
+  if (!exists) {
+    edges.push({ from: idA, to: idB, tipoAof: tipoAof || null });
+  } else if (tipoAof && !exists.tipoAof) {
+    exists.tipoAof = tipoAof;
+  }
 }
 
 function removeEdge(idA, idB) {
@@ -559,6 +563,19 @@ function draw() {
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
+
+    // Marcador de tipo AOF no meio da aresta: preenchido = já tem tipo
+    // definido, vazio = ainda não (clique na aresta pra escolher).
+    const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#6d1fc2';
+    const surfaceColor = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#fff';
+    const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+    ctx.beginPath();
+    ctx.arc(midX, midY, 4, 0, Math.PI * 2);
+    ctx.fillStyle = e.tipoAof ? accentColor : surfaceColor;
+    ctx.fill();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = e.tipoAof ? accentColor : edgeColor;
+    ctx.stroke();
     ctx.restore();
   });
 
@@ -781,6 +798,7 @@ function pathToString(startId, endId) {
 
 let _aiCurrentPair = null;
 let _aiLastMeio = null;
+let _aiLastTipoAof = null; // tipo AOF sugerido pela IA pro par atual — aplicado às arestas ao confirmar, editável depois clicando na aresta
 
 // Tipos de relação (AOF) do método Sphere-M — mesma referência usada na CLI (Main.py).
 const TIPOS_AOF = [
@@ -943,6 +961,60 @@ function showAIError() {
   document.getElementById('ai-hint').style.display = 'none';
 }
 
+// Estado da seleção de palavras clicáveis da justificativa da IA —
+// reiniciado a cada novo par (ver renderClickableJustificativa).
+let _aiWordList = [];
+let _aiSelectedIdx = new Set();
+
+// Quebra o texto em palavras clicáveis (pontuação e espaços ficam como
+// texto normal, só a palavra em si vira <span> clicável). Clicar numa
+// palavra a adiciona/remove do campo "meio" — dá pra clicar em várias
+// pra montar um termo composto, na ordem em que aparecem no texto.
+function renderClickableJustificativa(text) {
+  const container = document.getElementById('ai-result-text');
+  container.innerHTML = '';
+  _aiWordList = [];
+  _aiSelectedIdx = new Set();
+
+  const tokens = text.split(/(\s+)/);
+  tokens.forEach(token => {
+    if (!token) return;
+    if (/^\s+$/.test(token)) {
+      container.appendChild(document.createTextNode(token));
+      return;
+    }
+    const m = token.match(/^([^\p{L}\p{N}]*)([\p{L}\p{N}][\p{L}\p{N}-]*)?([^\p{L}\p{N}]*)$/u);
+    if (!m || !m[2]) {
+      container.appendChild(document.createTextNode(token));
+      return;
+    }
+    const [, pre, word, pos] = m;
+    if (pre) container.appendChild(document.createTextNode(pre));
+    const span = document.createElement('span');
+    span.className = 'ai-word';
+    span.textContent = word;
+    const idx = _aiWordList.length;
+    _aiWordList.push(word);
+    span.addEventListener('click', () => toggleAIWord(idx, span));
+    container.appendChild(span);
+    if (pos) container.appendChild(document.createTextNode(pos));
+  });
+}
+
+function toggleAIWord(idx, span) {
+  if (_aiSelectedIdx.has(idx)) {
+    _aiSelectedIdx.delete(idx);
+    span.classList.remove('selected');
+  } else {
+    _aiSelectedIdx.add(idx);
+    span.classList.add('selected');
+  }
+  if (_aiSelectedIdx.size) {
+    const ordenado = [..._aiSelectedIdx].sort((a, b) => a - b).map(i => _aiWordList[i]);
+    document.getElementById('input-meio').value = ordenado.join(' ');
+  }
+}
+
 function showAIResult(parsed) {
   _setAIState('result');
 
@@ -950,7 +1022,7 @@ function showAIResult(parsed) {
   if (parsed.hasRelation && parsed.tipoAof) {
     displayText = `[${parsed.tipoAof}] ${displayText}`;
   }
-  document.getElementById('ai-result-text').textContent = displayText;
+  renderClickableJustificativa(displayText);
 
   const badge = document.getElementById('ai-relation-badge');
   if (parsed.hasRelation) {
@@ -965,6 +1037,12 @@ function showAIResult(parsed) {
   const inputEl = document.getElementById('input-meio');
   _aiLastMeio = parsed.hasRelation ? parsed.meio : null;
 
+  // Guarda o tipo AOF sugerido pela IA — aplicado automaticamente às
+  // arestas quando o par for confirmado. Não tem mais seletor antes de
+  // confirmar; pra revisar/trocar o tipo depois, é só clicar na aresta
+  // já criada no canvas.
+  _aiLastTipoAof = (parsed.hasRelation && TIPOS_AOF.includes(parsed.tipoAof)) ? parsed.tipoAof : null;
+
   // Checagem extra no cliente: mesmo com a instrução no prompt, a IA pode
   // ocasionalmente repetir um meio já existente no grafo. Se isso acontecer,
   // avisa em vez de preencher como se fosse um termo novo.
@@ -973,15 +1051,15 @@ function showAIResult(parsed) {
   );
 
   if (parsed.hasRelation && parsed.meio && jaExiste) {
-    hintEl.textContent = `⚠ A IA sugeriu "${parsed.meio}", mas esse termo já existe no grafo. Confira se faz sentido reaproveitar ou digite outro abaixo.`;
+    hintEl.textContent = `⚠ A IA sugeriu "${parsed.meio}", mas esse termo já existe no grafo. Confira se faz sentido reaproveitar, digite outro abaixo, ou clique nas palavras da análise acima pra montar um termo novo. Depois de confirmar, clique na aresta criada pra revisar o tipo AOF.`;
     hintEl.style.display = 'block';
     if (inputEl && !inputEl.classList.contains('is-extra')) inputEl.value = '';
   } else if (parsed.hasRelation && parsed.meio) {
-    hintEl.textContent = `A IA sugeriu "${parsed.meio}" como conceito do meio — ajuste se quiser antes de confirmar.`;
+    hintEl.textContent = `A IA sugeriu "${parsed.meio}" como conceito do meio (tipo AOF: ${_aiLastTipoAof || 'não identificado'}) — ajuste o termo se quiser, e depois de confirmar clique na aresta criada pra revisar o tipo AOF.`;
     hintEl.style.display = 'block';
     if (inputEl && !inputEl.classList.contains('is-extra')) inputEl.value = parsed.meio;
   } else if (parsed.hasRelation) {
-    hintEl.textContent = 'Leia a justificativa acima e digite abaixo o conceito que conecta os dois elementos.';
+    hintEl.textContent = 'Leia a justificativa acima e digite abaixo o conceito que conecta os dois elementos — ou clique nas palavras dela pra selecionar. O tipo AOF se escolhe depois, clicando na aresta criada.';
     hintEl.style.display = 'block';
   } else {
     hintEl.style.display = 'none';
@@ -1112,8 +1190,12 @@ async function updatePairUI() {
 
 function confirmPair() {
   if (finished) return;
-  const raw = document.getElementById('input-meio').value.trim();
+  const raw = document.getElementById('input-meio')?.value.trim();
   if (!raw) { advancePair(); return; }
+
+  // Tipo AOF sugerido pela IA pro par atual (se houver) — as arestas já
+  // saem com ele, mas dá pra revisar/trocar depois clicando na aresta.
+  const tipoAof = _aiLastTipoAof || null;
 
   // Support multiple meios separated by comma: A → m1 → m2 → ... → B
   const meios = raw.split(',').map(s => s.trim()).filter(Boolean);
@@ -1145,10 +1227,11 @@ function confirmPair() {
       tempG.add(label);
       E.add(label);
     }
-    getOrCreateEdge(ei.id, nm.id);
-    getOrCreateEdge(nm.id, gi.id);
+    getOrCreateEdge(ei.id, nm.id, tipoAof);
+    getOrCreateEdge(nm.id, gi.id, tipoAof);
   });
 
+  _aiLastTipoAof = null;
   advancePair();
 }
 
@@ -1293,14 +1376,9 @@ document.getElementById('reset-btn2').addEventListener('click', resetAll);
 // que o Grafo.Nodes já usa (ceiling/floor/relevant/gerado). As arestas
 // já saem na mesma orientação ei→meio→gi que Adicionar_No() monta no
 // motor Python, então a reconstrução do lado de lá não precisa adivinhar
-// nada — só seguir a mesma direção.
-//
-// Limitação atual: o tipo AOF de cada aresta não é guardado por aresta
-// aqui no WebFront (só aparece de passagem no texto da IA) — por isso
-// "tipoAof" sempre exporta como null. Isso não afeta raio/densidade/
-// eficiência/produtividade (que não dependem do tipo da relação), só
-// deixa a legenda das arestas em branco na visualização pyvis por
-// enquanto.
+// nada — só seguir a mesma direção. O tipo AOF de cada aresta (escolhido
+// no seletor ao lado do input do meio, manualmente ou pré-preenchido pela
+// IA) vai junto em "tipoAof".
 function buildSessionExport() {
   return {
     sphereM: {
@@ -1320,7 +1398,7 @@ function buildSessionExport() {
         tagNatureza: n.tagNatureza || null,
         tagCaminho: n.tagCaminho || null,
       })),
-      edges: edges.map(e => ({ from: e.from, to: e.to, tipoAof: null })),
+      edges: edges.map(e => ({ from: e.from, to: e.to, tipoAof: e.tipoAof || null })),
     },
   };
 }
@@ -1349,6 +1427,26 @@ function nodeAt(x, y) {
     const hh = (nd.h || 30) / 2;
     return Math.abs(x - nd.x) <= hw && Math.abs(y - nd.y) <= hh;
   });
+}
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
+  t = Math.max(0, Math.min(1, t));
+  const projX = x1 + t * dx, projY = y1 + t * dy;
+  return Math.hypot(px - projX, py - projY);
+}
+
+function edgeAt(x, y, threshold = 8) {
+  for (let i = edges.length - 1; i >= 0; i--) {
+    const e = edges[i];
+    const a = nodes.find(n => n.id === e.from);
+    const b = nodes.find(n => n.id === e.to);
+    if (!a || !b) continue;
+    if (distToSegment(x, y, a.x, a.y, b.x, b.y) <= threshold) return e;
+  }
+  return null;
 }
 
 function getPos(e) {
@@ -1390,11 +1488,75 @@ canvas.addEventListener('mouseup', () => {
 
 canvas.addEventListener('mouseleave', () => { dragging = null; });
 
+canvas.addEventListener('click', e => {
+  const p = getPos(e);
+  if (nodeAt(p.x, p.y)) return; // clique em nó é tratado no dblclick/drag, não aqui
+  const edge = edgeAt(p.x, p.y);
+  if (edge) startEdgeEdit(edge, e.clientX, e.clientY);
+});
+
 // ── Edição inline de nós (duplo clique) ──────────────────
 
 let editingNode = null;
 let nodeEditInput = null;
 let nodeTagPanel = null;
+
+// ── Edição de tipo AOF da aresta (clique na aresta) ──────
+let editingEdge = null;
+let edgeAofSelect = null;
+
+function startEdgeEdit(edge, clientX, clientY) {
+  if (editingEdge) closeEdgeEdit();
+  if (editingNode) commitNodeEdit(); // não deixa os dois painéis abertos ao mesmo tempo
+  editingEdge = edge;
+
+  edgeAofSelect = document.createElement('select');
+  edgeAofSelect.title = 'Tipo AOF desta aresta';
+  edgeAofSelect.style.cssText = `
+    position: fixed; left: ${clientX + 6}px; top: ${clientY + 6}px;
+    z-index: 9999; font: 500 11px "Geist Mono", ui-monospace, monospace;
+    padding: 5px 8px; border-radius: 6px; min-width: 170px;
+    border: 1.5px solid var(--accent, #6d1fc2);
+    background: var(--surface, #faf9f6); color: var(--text, #1c1a17);
+    cursor: pointer; outline: none; box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  `;
+
+  [['', '— tipo AOF —'], ...TIPOS_AOF.map(t => [t, t])].forEach(([v, t]) => {
+    const opt = document.createElement('option');
+    opt.value = v; opt.textContent = t;
+    if ((edge.tipoAof || '') === v) opt.selected = true;
+    edgeAofSelect.appendChild(opt);
+  });
+
+  edgeAofSelect.addEventListener('change', () => {
+    edge.tipoAof = edgeAofSelect.value || null;
+    draw();
+  });
+  edgeAofSelect.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); closeEdgeEdit(); }
+  });
+
+  document.body.appendChild(edgeAofSelect);
+  edgeAofSelect.focus();
+
+  const outsideClickHandler = e => {
+    if (!editingEdge) return;
+    if (edgeAofSelect?.contains(e.target)) return;
+    closeEdgeEdit();
+  };
+  document.addEventListener('mousedown', outsideClickHandler, true);
+  edgeAofSelect._cleanup = () => document.removeEventListener('mousedown', outsideClickHandler, true);
+}
+
+function closeEdgeEdit() {
+  if (edgeAofSelect) {
+    edgeAofSelect._cleanup?.();
+    edgeAofSelect.remove();
+  }
+  edgeAofSelect = null;
+  editingEdge = null;
+  draw();
+}
 
 const COR_CAMINHO = {
   positivo: '#0a8f3c',
@@ -1404,6 +1566,7 @@ const COR_CAMINHO = {
 
 function startNodeEdit(node) {
   if (editingNode) commitNodeEdit();
+  if (editingEdge) closeEdgeEdit();
   editingNode = node;
 
   const rect = canvas.getBoundingClientRect();

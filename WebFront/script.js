@@ -1517,26 +1517,6 @@ function nodeAt(x, y) {
   });
 }
 
-function distToSegment(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1, dy = y2 - y1;
-  const lenSq = dx * dx + dy * dy;
-  let t = lenSq ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
-  t = Math.max(0, Math.min(1, t));
-  const projX = x1 + t * dx, projY = y1 + t * dy;
-  return Math.hypot(px - projX, py - projY);
-}
-
-function edgeAt(x, y, threshold = 8) {
-  for (let i = edges.length - 1; i >= 0; i--) {
-    const e = edges[i];
-    const a = nodes.find(n => n.id === e.from);
-    const b = nodes.find(n => n.id === e.to);
-    if (!a || !b) continue;
-    if (distToSegment(x, y, a.x, a.y, b.x, b.y) <= threshold) return e;
-  }
-  return null;
-}
-
 function getPos(e) {
   const rect = canvas.getBoundingClientRect();
   return {
@@ -1578,75 +1558,11 @@ canvas.addEventListener('mouseup', () => {
 
 canvas.addEventListener('mouseleave', () => { dragging = null; });
 
-canvas.addEventListener('click', e => {
-  const p = getPos(e);
-  if (nodeAt(p.x, p.y)) return; // clique em nó é tratado no dblclick/drag, não aqui
-  const edge = edgeAt(p.x, p.y);
-  if (edge) startEdgeEdit(edge, e.clientX, e.clientY);
-});
-
 // ── Edição inline de nós (duplo clique) ──────────────────
 
 let editingNode = null;
 let nodeEditInput = null;
 let nodeTagPanel = null;
-
-// ── Edição de tipo AOF da aresta (clique na aresta) ──────
-let editingEdge = null;
-let edgeAofSelect = null;
-
-function startEdgeEdit(edge, clientX, clientY) {
-  if (editingEdge) closeEdgeEdit();
-  if (editingNode) commitNodeEdit(); // não deixa os dois painéis abertos ao mesmo tempo
-  editingEdge = edge;
-
-  edgeAofSelect = document.createElement('select');
-  edgeAofSelect.title = 'Tipo AOF desta aresta';
-  edgeAofSelect.style.cssText = `
-    position: fixed; left: ${clientX + 6}px; top: ${clientY + 6}px;
-    z-index: 9999; font: 500 11px "Geist Mono", ui-monospace, monospace;
-    padding: 5px 8px; border-radius: 6px; min-width: 170px;
-    border: 1.5px solid var(--accent, #6d1fc2);
-    background: var(--surface, #faf9f6); color: var(--text, #1c1a17);
-    cursor: pointer; outline: none; box-shadow: 0 4px 14px rgba(0,0,0,0.18);
-  `;
-
-  [['', '— tipo AOF —'], ...TIPOS_AOF.map(t => [t, t])].forEach(([v, t]) => {
-    const opt = document.createElement('option');
-    opt.value = v; opt.textContent = t;
-    if ((edge.tipoAof || '') === v) opt.selected = true;
-    edgeAofSelect.appendChild(opt);
-  });
-
-  edgeAofSelect.addEventListener('change', () => {
-    edge.tipoAof = edgeAofSelect.value || null;
-    draw();
-  });
-  edgeAofSelect.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); closeEdgeEdit(); }
-  });
-
-  document.body.appendChild(edgeAofSelect);
-  edgeAofSelect.focus();
-
-  const outsideClickHandler = e => {
-    if (!editingEdge) return;
-    if (edgeAofSelect?.contains(e.target)) return;
-    closeEdgeEdit();
-  };
-  document.addEventListener('mousedown', outsideClickHandler, true);
-  edgeAofSelect._cleanup = () => document.removeEventListener('mousedown', outsideClickHandler, true);
-}
-
-function closeEdgeEdit() {
-  if (edgeAofSelect) {
-    edgeAofSelect._cleanup?.();
-    edgeAofSelect.remove();
-  }
-  edgeAofSelect = null;
-  editingEdge = null;
-  draw();
-}
 
 const COR_CAMINHO = {
   positivo: '#0a8f3c',
@@ -1654,13 +1570,15 @@ const COR_CAMINHO = {
   ambos: '#6a2ca5',
 };
 
+// ── Edição de tipo AOF da aresta (clique na aresta) ──────
+let editingEdge = null;
+let edgeAofSelect = null;
+let edgeTagPanel = null;
+
 // ── Edição inline de arestas (duplo clique) — tipo AOF manual ────────
 // Mesmo padrão do editor de nós: duplo clique perto de uma aresta abre um
 // seletor com os TIPOS_AOF pra corrigir o tipo à mão, caso a IA ou a regra
 // de natureza tenham errado. 
-
-let editingEdge = null;
-let edgeTagPanel = null;
 
 function distToSegment(px, py, ax, ay, bx, by) {
   const dx = bx - ax, dy = by - ay;
@@ -1724,7 +1642,7 @@ function startEdgeEdit(edge, pos) {
   const selTipo = document.createElement('select');
 selTipo.title = 'Tipo de relação (AOF)';
 selTipo.style.cssText = selStyle;
-const opts = [['', '— sem tipo —'], ...TIPOS_AOF.map(t => [t, t])];
+const opts = [...TIPOS_AOF.map(t => [t, t])];
 opts.forEach(([v, t]) => {
   const opt = document.createElement('option');
   opt.value = v; opt.textContent = t;
@@ -1754,22 +1672,11 @@ if (!ehTipoPadrao && edge.tipo) {
 }
 
 selTipo.addEventListener('change', () => {
-  if (selTipo.value !== '') {
-    inputManual.value = '';
-    edge.tipo = selTipo.value;
-    edge.tipoManual = true;
-    commitEdgeEdit(true);
-  }
+  if (selTipo.value !== '') inputManual.value = '';
 });
 
-inputManual.addEventListener('change', () => {
-  const valor = inputManual.value.trim();
-  if (valor !== '') {
-    selTipo.value = ''; 
-    edge.tipo = valor;
-    edge.tipoManual = true;
-    commitEdgeEdit(true);
-  }
+inputManual.addEventListener('input', () => {
+  if (inputManual.value.trim() !== '') selTipo.value = '';
 });
 
   const btnRow = document.createElement('div');
@@ -1806,6 +1713,7 @@ inputManual.addEventListener('change', () => {
   edgeTagPanel.appendChild(btnRow);
   document.body.appendChild(edgeTagPanel);
   edgeTagPanel._selTipo = selTipo;
+  edgeTagPanel._inputManual = inputManual;
 
   selTipo.addEventListener('keydown', ev => {
     if (ev.key === 'Enter')  { ev.preventDefault(); commitEdgeEdit(); }
@@ -1822,12 +1730,13 @@ inputManual.addEventListener('change', () => {
   edgeTagPanel._cleanup = () => document.removeEventListener('mousedown', outsideClickHandler, true);
 }
 
-function commitEdgeEdit(skipReadSelect) {
+function commitEdgeEdit() {
   if (!editingEdge) return;
-  if (!skipReadSelect && edgeTagPanel) {
-    const novo = edgeTagPanel._selTipo.value || null;
-    editingEdge.tipo = novo;
-    editingEdge.tipoManual = true; // trava: reavaliarTiposDeArestas não sobrescreve mais
+  if (edgeTagPanel) {
+    const manual = edgeTagPanel._inputManual?.value.trim();
+    const select = edgeTagPanel._selTipo.value;
+    editingEdge.tipo = manual || select || null;
+    editingEdge.tipoManual = true;
   }
   edgeTagPanel?._cleanup?.();
   edgeTagPanel?.remove();
@@ -1846,7 +1755,7 @@ function cancelEdgeEdit() {
 
 function startNodeEdit(node) {
   if (editingNode) commitNodeEdit();
-  if (editingEdge) closeEdgeEdit();
+  if (editingEdge) cancelEdgeEdit();
   editingNode = node;
 
   const rect = canvas.getBoundingClientRect();
@@ -2021,6 +1930,7 @@ function commitNodeEdit() {
     // apagada de volta pra null na primeira propagação seguinte, porque
     // propagatePathTag() só preserva tags de nós com tagCaminhoManual = true.
     editingNode.tagCaminhoManual = !!novoCaminho;
+    reavaliarTiposDeArestas();
     nodeTagPanel._cleanup?.();
     nodeTagPanel.remove();
     nodeTagPanel = null;

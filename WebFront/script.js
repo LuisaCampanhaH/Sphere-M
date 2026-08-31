@@ -65,6 +65,7 @@ window.addEventListener('load', () => {
 });
 
 let nodes = [], edges = [], selected = null, dragging = null;
+let showEdgeLabels = localStorage.getItem('sphere-show-edge-labels') !== '0'; // padrão: mostrando
 let dragOff = { x: 0, y: 0 }, nextId = 0, animFrame = null;
 
 // ── Conjuntos do algoritmo ────────────────────────────────
@@ -593,17 +594,17 @@ function draw() {
     ctx.save();
 
     const tagA = a.tagCaminho, tagB = b.tagCaminho;
-    let edgeColor = getComputedStyle(document.documentElement).getPropertyValue('--edge-color').trim() || 'rgba(0,0,0,0.14)';
-    let edgeWidth = 1.5;
+    let edgeColor = getComputedStyle(document.documentElement).getPropertyValue('--edge-color-strong').trim() || 'rgba(0,0,0,0.55)';
+    let edgeWidth = 2.4;
 
     if (tagA && tagB && tagA !== tagB) {
       // extremidades com tags diferentes — trata como "ambos" pra não
       // sugerir uma cor só e esconder o conflito
       edgeColor = COR_CAMINHO.ambos;
-      edgeWidth = 2.5;
+      edgeWidth = 3.2;
     } else if (tagA || tagB) {
       edgeColor = COR_CAMINHO[tagA || tagB];
-      edgeWidth = 2.5;
+      edgeWidth = 3.2;
     }
 
     // Ponto onde a linha encosta na borda do nó de destino (aproximação
@@ -637,19 +638,19 @@ function draw() {
 
     // Rótulo do tipo de relação AOF (ex: "é-um", "é-parte-de"), quando
     // definido. Fica num pill pequeno no meio da aresta.
-    if (e.tipo) {
+    if (showEdgeLabels && e.tipo) {
       const midX = (a.x + tipX) / 2, midY = (a.y + tipY) / 2;
       ctx.save();
-      ctx.font = '500 8px "Geist Mono", ui-monospace, monospace';
+      ctx.font = '700 16px "Geist Mono", ui-monospace, monospace';
       const textW = ctx.measureText(e.tipo).width;
-      const padX = 4, padY = 2;
-      roundRect(midX - textW / 2 - padX, midY - 6 - padY, textW + padX * 2, 12 + padY * 2, 3);
+      const padX = 7, padY = 5;
+      roundRect(midX - textW / 2 - padX, midY - 11 - padY, textW + padX * 2, 22 + padY * 2, 5);
       ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#faf9f6';
-      ctx.globalAlpha = 0.92;
+      ctx.globalAlpha = 0.97;
       ctx.fill();
       ctx.globalAlpha = 1;
       ctx.strokeStyle = edgeColor;
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 2;
       if (e.tipoManual) ctx.setLineDash([2, 2]); // tracejado = tipo fixado à mão
       ctx.stroke();
       ctx.setLineDash([]);
@@ -1457,6 +1458,67 @@ function resetAll() {
 document.getElementById('reset-btn').addEventListener('click', resetAll);
 document.getElementById('reset-btn2').addEventListener('click', resetAll);
 
+// ── Seções recolhíveis da sidebar (legenda, auditoria, ponte python) ──
+// Cada seção guarda seu próprio estado (aberta/fechada) no localStorage,
+// independente das outras, e não mexe nos campos de digitar da fase 1.
+(function () {
+  const sections = [
+    { id: 'legend', toggleId: 'legend-toggle', storageKey: 'sphere-legend-collapsed' },
+    { id: 'tag-audit', toggleId: 'tag-audit-toggle', storageKey: 'sphere-tag-audit-collapsed' },
+    { id: 'export-section', toggleId: 'export-toggle', storageKey: 'sphere-export-collapsed' },
+  ];
+
+  sections.forEach(({ id, toggleId, storageKey }) => {
+    const section = document.getElementById(id);
+    const toggleBtn = document.getElementById(toggleId);
+    if (!section || !toggleBtn) return;
+
+    const collapsed = localStorage.getItem(storageKey) === '1';
+    if (collapsed) {
+      section.classList.add('collapsed');
+      toggleBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    toggleBtn.addEventListener('click', () => {
+      const nowCollapsed = section.classList.toggle('collapsed');
+      toggleBtn.setAttribute('aria-expanded', nowCollapsed ? 'false' : 'true');
+      localStorage.setItem(storageKey, nowCollapsed ? '1' : '0');
+    });
+  });
+})();
+
+// ── Mostrar/ocultar rótulos das relações (FOA) ─────────────
+// Botão no canto do canvas + clique direito no grafo alternam a
+// visibilidade das etiquetas (tipo AOF) desenhadas no meio de cada
+// aresta. As linhas e setas continuam aparecendo normalmente.
+(function () {
+  const btn = document.getElementById('toggle-edge-labels-btn');
+  const icon = document.getElementById('toggle-edge-labels-icon');
+
+  function applyState() {
+    if (btn) btn.setAttribute('aria-pressed', showEdgeLabels ? 'true' : 'false');
+    if (icon) icon.textContent = showEdgeLabels ? '🏷️' : '🚫';
+    if (btn) btn.title = showEdgeLabels
+      ? 'Ocultar rótulos das relações (ou clique direito no grafo)'
+      : 'Mostrar rótulos das relações (ou clique direito no grafo)';
+  }
+
+  function toggleEdgeLabels() {
+    showEdgeLabels = !showEdgeLabels;
+    localStorage.setItem('sphere-show-edge-labels', showEdgeLabels ? '1' : '0');
+    applyState();
+    draw();
+  }
+
+  applyState();
+  btn?.addEventListener('click', toggleEdgeLabels);
+
+  canvas.addEventListener('contextmenu', (ev) => {
+    ev.preventDefault();
+    toggleEdgeLabels();
+  });
+})();
+
 // ── Exportação para o Python (ponte WebFront → Main.py) ─────
 //
 // Formato combinado com "Python code/importar_grafo.py": grupos do
@@ -1550,7 +1612,15 @@ canvas.addEventListener('mousemove', e => {
 });
 
 canvas.addEventListener('mouseup', () => {
-  if (dragging) { dragging.vx = 0; dragging.vy = 0; }
+  if (dragging) {
+    dragging.vx = 0; dragging.vy = 0;
+    // Trava o nó na posição escolhida pelo usuário — sem isso a
+    // simulação de forças (gravidade de grupo, molas, repulsão) ia
+    // puxando o nó de volta pra "sua" faixa assim que o mouse soltasse.
+    // Duplo clique continua abrindo o editor normalmente, e arrastar de
+    // novo (mousedown) sempre volta a mover o nó livremente.
+    dragging.fixed = true;
+  }
   dragging = null;
   canvas.style.cursor = 'default';
   startSim();

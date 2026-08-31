@@ -34,6 +34,7 @@
 
   --canvas-dot:   rgba(0,0,0,0.07);
   --edge-color:   rgba(0,0,0,0.13);
+  --edge-color-strong: rgba(20,18,15,0.88);
   --shadow-sm:    0 1px 3px rgba(0,0,0,0.07), 0 2px 8px rgba(0,0,0,0.05);
   --shadow-md:    0 2px 8px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.07);
   --radius:       12px;
@@ -70,6 +71,7 @@
 
   --canvas-dot:   rgba(255,255,255,0.05);
   --edge-color:   rgba(255,255,255,0.12);
+  --edge-color-strong: rgba(245,242,235,0.9);
   --shadow-sm:    0 1px 3px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.2);
   --shadow-md:    0 2px 8px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.3);
 }
@@ -133,6 +135,39 @@ canvas {
   pointer-events: none;
   opacity: 0.7;
   transition: background 0.3s, border-color 0.3s, color 0.3s;
+}
+
+/* Botão: mostrar/ocultar rótulos das relações (FOA) */
+#toggle-edge-labels-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text-2);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.15s ease;
+}
+#toggle-edge-labels-btn:hover {
+  background: var(--surface3);
+  border-color: var(--border2);
+  transform: scale(1.06);
+}
+#toggle-edge-labels-btn[aria-pressed="false"] {
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+#toggle-edge-labels-btn[aria-pressed="false"]:hover {
+  opacity: 0.85;
 }
 
 /* ── Sidebar ────────────────────────────────── */
@@ -695,21 +730,67 @@ button:active { transform: scale(0.98); }
   transition: color 0.3s;
 }
 
-/* ── Legend ─────────────────────────────────── */
-#legend {
+/* ── Seções recolhíveis (legenda, auditoria, ponte python) ──── */
+.sidebar-collapsible {
   padding: 12px 20px;
   border-top: 1px solid var(--border);
   background: var(--surface2);
   transition: background 0.3s, border-color 0.3s;
 }
 
+.collapsible-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0 0 9px 0;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.collapsible-toggle:hover .legend-title,
+.collapsible-toggle:hover .chevron {
+  color: var(--text);
+}
+
+.chevron {
+  font-size: 11px;
+  color: var(--text-2);
+  transition: transform 0.25s ease, color 0.3s;
+  line-height: 1;
+}
+
+.sidebar-collapsible.collapsed .collapsible-toggle {
+  padding-bottom: 0;
+}
+
+.sidebar-collapsible.collapsed .chevron {
+  transform: rotate(-90deg);
+}
+
+.collapsible-content {
+  max-height: 400px;
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height 0.25s ease, opacity 0.2s ease;
+}
+
+.sidebar-collapsible.collapsed .collapsible-content {
+  max-height: 0;
+  opacity: 0;
+}
+
 .legend-title {
   font-family: 'Geist Mono', monospace;
-  font-size: 8px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text);
   margin-bottom: 8px;
   transition: color 0.3s;
 }
@@ -717,7 +798,7 @@ button:active { transform: scale(0.98); }
 .legend-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 5px 12px;
+  gap: 7px 12px;
 }
 
 .legend-item {
@@ -725,33 +806,28 @@ button:active { transform: scale(0.98); }
   align-items: center;
   gap: 7px;
   font-family: 'Geist Mono', monospace;
-  font-size: 9px;
-  color: var(--text-muted);
-  letter-spacing: 0.06em;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   transition: color 0.3s;
 }
 
 .legend-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 2px;
   flex-shrink: 0;
-  opacity: 0.85;
+  opacity: 1;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
 }
 
 /* ── Auditoria da tag de caminho ─────────────── */
-#tag-audit {
-  padding: 12px 20px;
-  border-top: 1px solid var(--border);
-  background: var(--surface2);
-  transition: background 0.3s, border-color 0.3s;
-}
-
 .audit-empty {
   font-family: 'Geist Mono', monospace;
-  font-size: 9px;
-  color: var(--text-muted);
+  font-size: 11px;
+  color: var(--text-2);
   letter-spacing: 0.02em;
   line-height: 1.5;
 }
@@ -761,8 +837,8 @@ button:active { transform: scale(0.98); }
   align-items: center;
   gap: 6px;
   font-family: 'Geist Mono', monospace;
-  font-size: 10px;
-  color: var(--text-muted);
+  font-size: 11px;
+  color: var(--text-2);
   margin-bottom: 4px;
   transition: color 0.3s;
 }
@@ -806,21 +882,14 @@ button:active { transform: scale(0.98); }
 }
 
 /* ── Exportação para o Python ──────────────────── */
-#export-section {
-  padding: 12px 20px;
-  border-top: 1px solid var(--border);
-  background: var(--surface2);
-  transition: background 0.3s, border-color 0.3s;
-}
-
 #export-json-btn {
   margin-top: 4px;
 }
 
 #export-hint {
   font-family: 'Geist Mono', monospace;
-  font-size: 9px;
-  color: var(--text-muted);
+  font-size: 11px;
+  color: var(--text-2);
   letter-spacing: 0.02em;
   line-height: 1.6;
   margin-top: 8px;
@@ -829,7 +898,7 @@ button:active { transform: scale(0.98); }
 
 #export-hint code {
   font-family: 'Geist Mono', monospace;
-  font-size: 9px;
+  font-size: 11px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 3px;

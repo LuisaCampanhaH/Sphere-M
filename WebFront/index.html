@@ -20,7 +20,10 @@
     <div id="canvas-side">
       <div id="canvas-wrap">
         <canvas id="graph-canvas"></canvas>
-        <div id="canvas-overlay-hint">drag · duplo clique no nó pra editar · clique na aresta pro tipo AOF · delete</div>
+        <button id="toggle-edge-labels-btn" type="button" title="Mostrar/ocultar rótulos das relações (ou clique direito no grafo)" aria-pressed="true">
+          <span id="toggle-edge-labels-icon">🏷️</span>
+        </button>
+        <div id="canvas-overlay-hint">drag · duplo clique no nó pra editar · clique na aresta pro tipo AOF · clique direito: mostrar/ocultar rótulos · delete</div>
       </div>
     </div>
 
@@ -188,45 +191,60 @@
       </div><!-- /sidebar-body -->
 
       <!-- Legend -->
-      <div id="legend">
-        <div class="legend-title">legenda</div>
-        <div class="legend-grid">
-          <div class="legend-item">
-            <span class="legend-dot" style="background:var(--teto);"></span>teto
+      <div id="legend" class="sidebar-collapsible">
+        <button id="legend-toggle" class="collapsible-toggle" type="button" aria-expanded="true" aria-controls="legend-content">
+          <span class="legend-title" style="margin-bottom:0">legenda</span>
+          <span id="legend-chevron" class="chevron">▾</span>
+        </button>
+        <div id="legend-content" class="collapsible-content">
+          <div class="legend-grid">
+            <div class="legend-item">
+              <span class="legend-dot" style="background:var(--teto);"></span>teto
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot" style="background:var(--piso);"></span>piso
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot" style="background:var(--rel);"></span>relacionado
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot" style="background:var(--meio);"></span>meio
+            </div>
           </div>
-          <div class="legend-item">
-            <span class="legend-dot" style="background:var(--piso);"></span>piso
+          <div class="legend-title" style="margin-top:8px">dupla tag (duplo clique no nó)</div>
+          <div class="legend-grid">
+            <div class="legend-item"><span class="legend-dot" style="background:#0a8f3c;"></span>caminho positivo</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#c1121f;"></span>caminho negativo</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#6a2ca5;"></span>caminho ambos</div>
+            <div class="legend-item">■ Classe</div>
+            <div class="legend-item">● Objeto</div>
+            <div class="legend-item">▲ Atributo</div>
+            <div class="legend-item">◆ Instância</div>
           </div>
-          <div class="legend-item">
-            <span class="legend-dot" style="background:var(--rel);"></span>relacionado
-          </div>
-          <div class="legend-item">
-            <span class="legend-dot" style="background:var(--meio);"></span>meio
-          </div>
-        </div>
-        <div class="legend-title" style="margin-top:8px">dupla tag (duplo clique no nó)</div>
-        <div class="legend-grid">
-          <div class="legend-item"><span class="legend-dot" style="background:#0a8f3c;"></span>caminho positivo</div>
-          <div class="legend-item"><span class="legend-dot" style="background:#c1121f;"></span>caminho negativo</div>
-          <div class="legend-item"><span class="legend-dot" style="background:#6a2ca5;"></span>caminho ambos</div>
-          <div class="legend-item">■ Classe</div>
-          <div class="legend-item">● Objeto</div>
-          <div class="legend-item">▲ Atributo</div>
-          <div class="legend-item">◆ Instância</div>
         </div>
       </div>
 
       <!-- Auditoria da tag de caminho -->
-      <div id="tag-audit">
-        <div class="legend-title">auditoria de caminho</div>
-        <div id="tag-audit-panel"></div>
+      <div id="tag-audit" class="sidebar-collapsible">
+        <button id="tag-audit-toggle" class="collapsible-toggle" type="button" aria-expanded="true" aria-controls="tag-audit-content">
+          <span class="legend-title" style="margin-bottom:0">auditoria de caminho</span>
+          <span id="tag-audit-chevron" class="chevron">▾</span>
+        </button>
+        <div id="tag-audit-content" class="collapsible-content">
+          <div id="tag-audit-panel"></div>
+        </div>
       </div>
 
       <!-- Exportação para o motor Python (métricas/visualização) -->
-      <div id="export-section">
-        <div class="legend-title">ponte com o Python</div>
-        <button id="export-json-btn" class="btn-ghost" style="width:100%">⇩ Exportar sessão (JSON)</button>
-        <p id="export-hint">gera um .json com nós, arestas e tags — leia com <code>Python code/importar_grafo.py</code> pra calcular raio, densidade, eficiência e produtividade, ou gerar a visualização pyvis.</p>
+      <div id="export-section" class="sidebar-collapsible">
+        <button id="export-toggle" class="collapsible-toggle" type="button" aria-expanded="true" aria-controls="export-content">
+          <span class="legend-title" style="margin-bottom:0">ponte com o Python</span>
+          <span id="export-chevron" class="chevron">▾</span>
+        </button>
+        <div id="export-content" class="collapsible-content">
+          <button id="export-json-btn" class="btn-ghost" style="width:100%">⇩ Exportar sessão (JSON)</button>
+          <p id="export-hint">gera um .json com nós, arestas e tags — leia com <code>Python code/importar_grafo.py</code> pra calcular raio, densidade, eficiência e produtividade, ou gerar a visualização pyvis.</p>
+        </div>
       </div>
 
     </div><!-- /sidebar -->

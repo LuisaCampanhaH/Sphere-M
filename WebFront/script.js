@@ -6,7 +6,6 @@ canvas.width = W;
 canvas.height = H;
 let sessionId = 0;
 
-// resize handler
 window.addEventListener('resize', () => {
   const oldW = W, oldH = H;
   W = canvas.parentElement.clientWidth;
@@ -17,12 +16,6 @@ window.addEventListener('resize', () => {
   draw();
 });
 
-// Reposiciona proporcionalmente todos os nós quando o canvas muda de
-// tamanho (ex: janela redimensionada, sidebar abriu/fechou, ou a medição
-// inicial do canvas foi feita antes do layout da página estabilizar).
-// Sem isso, nós antigos ficam com coordenadas de um canvas que não existe
-// mais e podem acabar fora da área visível (o #canvas-wrap tem
-// overflow:hidden, então "fora" quer dizer literalmente invisível).
 function rescaleNodesToCanvas(oldW, oldH) {
   if (!oldW || !oldH || !W || !H) return;
   if (oldW === W && oldH === H) return;
@@ -33,9 +26,6 @@ function rescaleNodesToCanvas(oldW, oldH) {
   clampNodesToCanvas();
 }
 
-// Garante que nenhum nó fique fora dos limites atuais do canvas.
-// Chamado tanto no resize quanto no início de todo draw(), como rede de
-// segurança independente de qual código gerou a posição do nó.
 function clampNodesToCanvas() {
   nodes.forEach(nd => {
     const hw = (nd.w || 64) / 2;
@@ -49,8 +39,6 @@ function clampNodesToCanvas() {
   });
 }
 
-// Re-mede o canvas logo depois do load completo (fontes, etc.) para
-// corrigir qualquer medição inicial feita antes do layout estabilizar.
 window.addEventListener('load', () => {
   const oldW = W, oldH = H;
   const freshW = canvas.parentElement.clientWidth;
@@ -65,10 +53,10 @@ window.addEventListener('load', () => {
 });
 
 let nodes = [], edges = [], selected = null, dragging = null;
-let showEdgeLabels = localStorage.getItem('sphere-show-edge-labels') !== '0'; // padrão: mostrando
+let showEdgeLabels = localStorage.getItem('sphere-show-edge-labels') !== '0'; 
 let dragOff = { x: 0, y: 0 }, nextId = 0, animFrame = null;
+let ctrlSelectedNodes = []; // Guarda os nós clicados com Ctrl
 
-// ── Conjuntos do algoritmo ────────────────────────────────
 let E = new Set();
 let G = new Set();
 let tempG = new Set();
@@ -85,8 +73,6 @@ const GROUP_COLORS = {
   meio: { fill: '#f3eafd', stroke: '#7c22d4', text: '#4a0e87' },
 };
 
-// ── Nós ──────────────────────────────────────────────────
-
 function findNode(label) {
   return nodes.find(n => n.label.toLowerCase() === label.toLowerCase().trim());
 }
@@ -98,43 +84,29 @@ function createNode(label, group, x, y) {
     x: x !== undefined ? x : W / 2 + (Math.random() - 0.5) * 100,
     y: y !== undefined ? y : H / 2 + (Math.random() - 0.5) * 100,
     vx: 0, vy: 0,
-    w: 64, h: 30,   // will be recalculated on first draw()
+    w: 64, h: 30,   
     highlight: false, pulse: 0,
     linkedToCeiling: false,
     linkedToFloor: false,
-    // ── Dupla tag (extensão da IC) ──
-    tagNatureza: null,  // 'Classe' | 'Objeto' | 'Atributo' | 'Instância' | null
-    tagCaminho: null,   // 'positivo' | 'negativo' | 'ambos' | null
-    tagCaminhoManual: false, // true = humano marcou este nó direto no editor
-                              // false = valor atual veio (ou pode vir) da propagação automática
+    tagNatureza: null,  
+    tagCaminho: null,   
+    tagCaminhoManual: false, 
   };
   nodes.push(node);
   return node;
 }
 
-// ── Regra de tipo de relação por natureza (Classe/Objeto) ─────────────
-// Fixado por enquanto (sem checar dependência de herança — fica para
-// refinar depois): classe & classe sempre "é-um"; classe & objeto também
-// "é-um". Objeto & objeto, ou quando algum dos dois lados ainda não tem
-// natureza definida, não força nada — a aresta fica com o tipo que a IA
-// sugeriu (ou null, se nenhum dos dois existir).
 function tipoRelacaoPorNatureza(nodeA, nodeB) {
   const a = nodeA?.tagNatureza, b = nodeB?.tagNatureza;
   if (!a || !b) return null;
   if (a === 'Classe' && b === 'Classe') return 'é-um';
   if ((a === 'Classe' && b === 'Objeto') || (a === 'Objeto' && b === 'Classe')) return 'é-um';
-  return null; // objeto & objeto — sem regra fixa ainda
+  return null;
 }
 
-// Re-checa o tipo de todas as arestas do grafo contra a regra de
-// natureza acima. Precisa ser chamado sempre que a tagNatureza de um nó
-// muda depois que arestas ligadas a ele já existiam (ex: usuário marca
-// um nó como Classe só depois de já ter conectado ele a outros). Só
-// sobrescreve quando a regra realmente força um tipo; do contrário
-// mantém o que já estava (sugestão da IA ou null).
 function reavaliarTiposDeArestas() {
   edges.forEach(e => {
-    if (e.tipoManual) return; // usuário fixou esse tipo à mão — não sobrescreve
+    if (e.tipoManual) return;
     const a = nodes.find(n => n.id === e.from);
     const b = nodes.find(n => n.id === e.to);
     const forcado = tipoRelacaoPorNatureza(a, b);
@@ -142,12 +114,6 @@ function reavaliarTiposDeArestas() {
   });
 }
 
-// Cria (ou reaproveita) uma aresta DIRECIONADA idA → idB, com um tipo de
-// relação AOF opcional (ex: "é-um", "é-parte-de"). O tipo vem de três
-// fontes possíveis, nessa ordem de prioridade:
-//   1) edição manual do humano (edge.tipoManual === true) — sempre vence
-//   2) regra fixa de natureza (classe/objeto) — vence se aplicável
-//   3) tipoSugerido — normalmente o TIPO_AOF que a IA propôs pro par
 function getOrCreateEdge(idA, idB, tipoSugerido) {
   const nodeA = nodes.find(n => n.id === idA);
   const nodeB = nodes.find(n => n.id === idB);
@@ -156,12 +122,13 @@ function getOrCreateEdge(idA, idB, tipoSugerido) {
 
   const exists = edges.find(e => e.from === idA && e.to === idB);
   if (exists) {
-    if (exists.tipoManual) return exists; // travado pelo humano — não mexe
+    if (exists.tipoManual) return exists;
     if (tipoForcado) exists.tipo = tipoForcado;
     else if (!exists.tipo && tipo) exists.tipo = tipo;
     return exists;
   }
-  const edge = { from: idA, to: idB, tipo, tipoManual: false };
+  // Aresta agora guarda a propriedade showFOA individualmente
+  const edge = { from: idA, to: idB, tipo, tipoManual: false, showFOA: false };
   edges.push(edge);
   return edge;
 }
@@ -175,8 +142,6 @@ function edgeExists(idA, idB) {
   return edges.some(e =>
     (e.from === idA && e.to === idB) || (e.from === idB && e.to === idA));
 }
-
-// ── Propagação de marcas ─────────────────────────────────
 
 function propagateMarks() {
   const cQueue = nodes.filter(nd => nd.linkedToCeiling).map(nd => nd.id);
@@ -210,56 +175,6 @@ function propagateMarks() {
   }
 }
 
-// ── Dupla tag: natureza (Classe/Objeto/Atributo/Instância) + caminho (positivo/negativo/ambos) ──
-//
-// tagNatureza NÃO se propaga: é uma característica do próprio elemento
-// (Classe = conceito geral, Objeto = entidade concreta do domínio,
-// Atributo = propriedade/característica de algo, Instância = ocorrência
-// específica de uma classe), decidida diretamente pelo humano no editor do nó.
-const NATUREZAS = ['Classe', 'Objeto', 'Atributo', 'Instância'];
-const SIMBOLOS_NATUREZA = { Classe: '■', Objeto: '●', Atributo: '▲', 'Instância': '◆' };
-//
-// tagCaminho: HISTÓRICO -- a primeira versão inundava a tag pelo grafo do
-// mesmo jeito que linkedToCeiling/linkedToFloor (flood: todo vizinho de um
-// nó marcado herda a marca, e o flood se espalha dali em diante). Isso
-// contaminava nós sem relação real com o desfecho: um ancestral taxonômico
-// compartilhado por um ramo "positivo" e um ramo "negativo" virava "ambos"
-// mesmo sem ligação real com nenhum dos dois -- e um nó a 1 aresta de
-// distância de um único vizinho "positivo" virava "positivo" só por estar
-// perto, mesmo sem ninguém ter dito isso sobre ele. Por causa disso a
-// propagação foi desligada por um tempo (versão anterior deste arquivo) e
-// a tag só existia onde o humano clicava.
-//
-// FIX (versão atual): em vez de inundar 1 aresta por vez a partir de
-// QUALQUER nó marcado, a propagação agora:
-//   1. só usa como "semente direcional" nós marcados manualmente como
-//      'positivo' ou 'negativo' (normalmente os dois nós do FLOOR --
-//      Sobrevivência e Morte -- mas pode ser qualquer nó que o humano
-//      marcar explicitamente);
-//   2. pra cada semente, calcula ALCANÇABILIDADE REAL no grafo dirigido
-//      (BFS seguindo o caminho de arestas até a semente, não "é vizinho
-//      direto de"). Só quem tem um caminho de verdade até aquela semente
-//      herda a marca dela;
-//   3. um nó só vira 'ambos' automaticamente se alcançar UMA semente
-//      'positivo' E UMA semente 'negativo' por caminhos de fato distintos
-//      -- não por estar "no meio" ou perto dos dois;
-//   4. sementes marcadas 'ambos' NÃO propagam direção nenhuma (não faz
-//      sentido inundar "ambos" pra frente -- ver ressalva abaixo);
-//   5. tags que o humano colocou manualmente (tagCaminhoManual = true)
-//      nunca são sobrescritas pela propagação automática.
-//
-// RESSALVA que continua valendo (documentada no roteiro): as arestas do
-// grafo são do vocabulário AOF -- é-um, é-parte-de, é-composto-por, etc.
-// -- ou seja, são relações TAXONÔMICAS, não relações causais do tipo
-// "leva a" ou "aumenta o risco de". Então "alcança Morte por um caminho
-// taxonômico" é uma aproximação de "pertence ao ramo/caminho da Morte",
-// não uma prova de causalidade real. Isso é adequado pro que o roteiro
-// pede (dividir visualmente os dois sub-grafos / caminhos), mas não deve
-// ser lido como um motor de inferência causal. Se algum dia quiserem
-// causalidade de verdade, o caminho é dar um tipo de aresta próprio pra
-// isso (separado do AOF) e só propagar por esse tipo -- ver seção
-// "próximo passo" no fim deste comentário.
-
 function combineCaminho(atual, novo) {
   if (!novo) return atual;
   if (!atual) return novo;
@@ -267,9 +182,6 @@ function combineCaminho(atual, novo) {
   return 'ambos';
 }
 
-// Retorna o conjunto de ids de nós que têm um caminho dirigido de verdade
-// (multi-hop, seguindo edges.from → edges.to) até targetId. Ou seja:
-// "quem, seguindo as arestas, eventualmente chega em targetId".
 function _nosQueAlcancam(targetId) {
   const alcancam = new Set();
   let fronteira = [targetId];
@@ -290,13 +202,10 @@ function _nosQueAlcancam(targetId) {
 }
 
 function propagatePathTag() {
-  // Sementes: nós marcados manualmente com direção (positivo/negativo).
-  // 'ambos' manual fica só no próprio nó -- não vira semente direcional.
   const sementes = nodes.filter(nd =>
     nd.tagCaminhoManual && (nd.tagCaminho === 'positivo' || nd.tagCaminho === 'negativo')
   );
 
-  // id -> tag automática calculada (antes de aplicar)
   const calculado = new Map();
 
   sementes.forEach(semente => {
@@ -308,14 +217,11 @@ function propagatePathTag() {
   });
 
   nodes.forEach(nd => {
-    if (nd.tagCaminhoManual) return; // nunca sobrescreve tag humana
+    if (nd.tagCaminhoManual) return;
     nd.tagCaminho = calculado.get(nd.id) || null;
   });
 }
 
-// ── Poda: remove qualquer nó sem C+F simultâneo, exceto teto e piso ──
-// Roda em loop até estabilizar, pois remover um nó pode desancorar vizinhos.
-// Chamada automaticamente pelo botão "encerrar".
 function executePoda() {
   let changed = true;
   while (changed) {
@@ -330,7 +236,6 @@ function executePoda() {
     if (!toRemove.length) { changed = false; break; }
     edges = edges.filter(e => !toRemove.includes(e.from) && !toRemove.includes(e.to));
     nodes = nodes.filter(nd => !toRemove.includes(nd.id));
-    // resetar marcas para re-propagar do zero na próxima iteração
     nodes.forEach(nd => {
       if (nd.group !== 'teto') nd.linkedToCeiling = false;
       if (nd.group !== 'piso') nd.linkedToFloor = false;
@@ -342,12 +247,9 @@ function isGraphComplete() {
   return nodes.every(nd => nd.linkedToCeiling && nd.linkedToFloor);
 }
 
-// ── Auditoria da tag de caminho ──────────────────────────────
-// Só olha o que já está marcado diretamente nos nós (sem inundar nada).
-// Serve pra responder na hora as duas perguntas que ficaram em aberto:
-//   1) uma Classe tende sempre a virar "ambos"? (audita por natureza)
-//   2) os dois caminhos (positivo/negativo) estão equilibrados,
-//      ou alguém está só listando fatores de um lado só?
+const NATUREZAS = ['Classe', 'Objeto', 'Atributo', 'Instância'];
+const SIMBOLOS_NATUREZA = { Classe: '■', Objeto: '●', Atributo: '▲', 'Instância': '◆' };
+
 function auditTags() {
   const contagem = { positivo: 0, negativo: 0, ambos: 0, semTag: 0 };
   const ambosPorNatureza = { semNatureza: [] };
@@ -409,7 +311,6 @@ function renderAuditPanel() {
   el.innerHTML = html;
 }
 
-// ── Conjuntos: geração de pares GE ────────────────────────
 function buildGE() {
   const result = [];
   for (const gi of G) {
@@ -430,15 +331,10 @@ function buildGEforContinue() {
   return buildGE();
 }
 
-// ── Simulação de forças ───────────────────────────────────
 const REPULSION = 28000, SPRING_LEN = 220, SPRING_K = 0.04, DAMPING = 0.82, CENTER_K = 0.008;
-
-// Target Y bands for each group (fractions of H)
 const GROUP_TARGET_Y = { teto: 0.10, piso: 0.90, relacionado: 0.50, meio: 0.50 };
 const GROUP_Y_K = { teto: 0.06, piso: 0.06, relacionado: 0.04, meio: 0.035 };
-// Target X: teto/piso/relacionado pulled to center-X; meios pulled together sideways
 const GROUP_X_K = { teto: 0.02, piso: 0.02, relacionado: 0.02, meio: 0.0 };
-
 let simSteps = 0;
 
 function simulateStep() {
@@ -446,7 +342,6 @@ function simulateStep() {
   if (!n) return;
   nodes.forEach(nd => { nd.fx = 0; nd.fy = 0; });
 
-  // Repulsion between all pairs
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       const a = nodes[i], b = nodes[j];
@@ -458,7 +353,6 @@ function simulateStep() {
     }
   }
 
-  // Spring forces along edges
   edges.forEach(e => {
     const a = nodes.find(n => n.id === e.from), b = nodes.find(n => n.id === e.to);
     if (!a || !b) return;
@@ -469,21 +363,16 @@ function simulateStep() {
     a.fx += fx; a.fy += fy; b.fx -= fx; b.fy -= fy;
   });
 
-  // Group-based gravity: each group is pulled to its target Y band
   nodes.forEach(nd => {
     const targetY = (GROUP_TARGET_Y[nd.group] ?? 0.5) * H;
     const yK = GROUP_Y_K[nd.group] ?? CENTER_K;
     nd.fy += (targetY - nd.y) * yK;
-
-    // X gravity: non-meio nodes pulled toward center-X
     const xK = GROUP_X_K[nd.group] ?? 0;
     nd.fx += (W / 2 - nd.x) * xK;
   });
 
-  // Meios: pulled toward center-X (gentle) + slight sibling clustering on X
   const meioNodes = nodes.filter(nd => nd.group === 'meio');
   if (meioNodes.length > 1) {
-    // Sort by id so order is stable, then space them evenly around center-X
     const sorted = [...meioNodes].sort((a, b) => a.id - b.id);
     const spacing = Math.min(140, (W * 0.6) / sorted.length);
     const totalW = spacing * (sorted.length - 1);
@@ -495,7 +384,6 @@ function simulateStep() {
     meioNodes[0].fx += (W / 2 - meioNodes[0].x) * 0.025;
   }
 
-  // Integrate
   nodes.forEach(nd => {
     if (dragging && dragging.id === nd.id) return;
     if (nd.fixed) return;
@@ -524,14 +412,8 @@ function startSim(steps = 300) {
   animFrame = requestAnimationFrame(loop);
 }
 
-// ── Desenhar ─────────────────────────────────────────────
-
 function draw() {
   clampNodesToCanvas();
-  // Roda a propagação de caminho (positivo/negativo/ambos) toda vez que
-  // desenhamos, como rede de segurança — mesmo padrão do clampNodesToCanvas
-  // acima. Sem isso a função existia mas nunca era chamada, então nenhuma
-  // tag jamais se espalhava a partir das sementes (Sobrevivência/Morte).
   propagatePathTag();
   ctx.clearRect(0, 0, W, H);
 
@@ -541,16 +423,15 @@ function draw() {
       ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
     }
 
-  // ── Measure node sizes (two-zone design) ──────────────────
   const LABEL_FONT = '500 12px "Geist Mono", ui-monospace, monospace';
   ctx.font = LABEL_FONT;
-  const NODE_R     = 5;   // border radius
-  const ACCENT_H   = 3;   // top color stripe height
-  const LABEL_ZONE = 30;  // height of label area
-  const BADGE_ZONE = 20;  // height of C/F badge area
-  const BADGE_W    = 22;  // width of each C/F pill
-  const BADGE_H    = 13;  // height of each C/F pill
-  const BADGE_R    = 3;   // radius of C/F pill
+  const NODE_R     = 5;
+  const ACCENT_H   = 3;
+  const LABEL_ZONE = 30;
+  const BADGE_ZONE = 20;
+  const BADGE_W    = 22;
+  const BADGE_H    = 13;
+  const BADGE_R    = 3;
 
   nodes.forEach(nd => {
     const textW = ctx.measureText(nd.label).width;
@@ -559,7 +440,6 @@ function draw() {
     nd.h = LABEL_ZONE + (nd.hasBadges ? BADGE_ZONE : 0);
   });
 
-  // ── Helper: rounded rect path ──────────────────────────────
   function roundRect(rx, ry, rw, rh, radii) {
     ctx.beginPath();
     if (ctx.roundRect) {
@@ -579,15 +459,6 @@ function draw() {
     ctx.closePath();
   }
 
-  // ── Draw edges (direcionadas: linha + seta + rótulo do tipo AOF) ───────
-  // O grafo agora é direcionado de fato: toda aresta guarda de onde saiu
-  // (from) e onde chegou (to), mais opcionalmente um `tipo` (um dos
-  // TIPOS_AOF, ex: "é-um", "é-parte-de") decidido pela IA no momento da
-  // conexão ou forçado pela regra de natureza (tipoRelacaoPorNatureza).
-  // Se algum dos dois nós da aresta tem tag de caminho (positivo/negativo/
-  // ambos), a linha herda essa cor — assim dá pra ver o trajeto colorido
-  // pelo grafo, não só a borda do nó isolado. Sem tag em nenhum dos dois
-  // lados, fica na cor neutra de sempre.
   edges.forEach(e => {
     const a = nodes.find(n => n.id === e.from), b = nodes.find(n => n.id === e.to);
     if (!a || !b) return;
@@ -598,8 +469,6 @@ function draw() {
     let edgeWidth = 2.4;
 
     if (tagA && tagB && tagA !== tagB) {
-      // extremidades com tags diferentes — trata como "ambos" pra não
-      // sugerir uma cor só e esconder o conflito
       edgeColor = COR_CAMINHO.ambos;
       edgeWidth = 3.2;
     } else if (tagA || tagB) {
@@ -607,9 +476,6 @@ function draw() {
       edgeWidth = 3.2;
     }
 
-    // Ponto onde a linha encosta na borda do nó de destino (aproximação
-    // elíptica inscrita na caixa do nó), pra seta não ficar escondida
-    // atrás do retângulo do nó.
     const dx = b.x - a.x, dy = b.y - a.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
     const ux = dx / dist, uy = dy / dist;
@@ -624,7 +490,6 @@ function draw() {
     ctx.lineTo(tipX, tipY);
     ctx.stroke();
 
-    // Seta indicando a direção da relação (a → b).
     const ARROW_LEN = 9, ARROW_W = 6;
     const backX = tipX - ux * ARROW_LEN, backY = tipY - uy * ARROW_LEN;
     const perpX = -uy, perpY = ux;
@@ -636,9 +501,10 @@ function draw() {
     ctx.fillStyle = edgeColor;
     ctx.fill();
 
-    // Rótulo do tipo de relação AOF (ex: "é-um", "é-parte-de"), quando
-    // definido. Fica num pill pequeno no meio da aresta.
-    if (showEdgeLabels && e.tipo) {
+    // Rótulo da aresta com base na seleção do par (e.showFOA)
+    const isSelectedEdge = e.showFOA;
+    
+    if ((showEdgeLabels || isSelectedEdge) && e.tipo) {
       const midX = (a.x + tipX) / 2, midY = (a.y + tipY) / 2;
       ctx.save();
       ctx.font = '700 16px "Geist Mono", ui-monospace, monospace';
@@ -651,7 +517,7 @@ function draw() {
       ctx.globalAlpha = 1;
       ctx.strokeStyle = edgeColor;
       ctx.lineWidth = 2;
-      if (e.tipoManual) ctx.setLineDash([2, 2]); // tracejado = tipo fixado à mão
+      if (e.tipoManual) ctx.setLineDash([2, 2]);
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = edgeColor;
@@ -664,7 +530,6 @@ function draw() {
     ctx.restore();
   });
 
-  // ── Draw nodes ──────────────────────────────────────────────
   nodes.forEach(nd => {
     const c   = GROUP_COLORS[nd.group] || GROUP_COLORS.meio;
     const isSel = selected && selected.id === nd.id;
@@ -673,7 +538,6 @@ function draw() {
     const nw  = nd.w;
     const nh  = nd.h;
 
-    // ── Pulse ring for highlighted nodes ──
     if (nd.highlight) {
       const pulse = Math.sin(nd.pulse || 0);
       const ring  = 5 + 3 * pulse;
@@ -685,21 +549,28 @@ function draw() {
       ctx.stroke();
       ctx.restore();
     }
+    
+    // Feedback visual para o nó que está selecionado com o Ctrl
+    if (ctrlSelectedNodes.includes(nd)) {
+      ctx.save();
+      roundRect(nx - 4, ny - 4, nw + 8, nh + 8, NODE_R + 4);
+      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#6d1fc2';
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
+    }
 
-    // ── Drop shadow ──
     ctx.save();
     ctx.shadowColor   = isSel ? c.stroke : 'rgba(0,0,0,0.15)';
     ctx.shadowBlur    = isSel ? 18 : 7;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = isSel ? 0 : 3;
-
-    // Main box body
     roundRect(nx, ny, nw, nh, NODE_R);
     ctx.fillStyle = c.fill;
     ctx.fill();
     ctx.restore();
 
-    // ── Main border ──
     ctx.save();
     roundRect(nx, ny, nw, nh, NODE_R);
     const corBordaTag = COR_CAMINHO[nd.tagCaminho];
@@ -708,14 +579,12 @@ function draw() {
     ctx.stroke();
     ctx.restore();
 
-    // ── Top accent stripe (colored band) ──
     ctx.save();
     roundRect(nx, ny, nw, ACCENT_H, [NODE_R, NODE_R, 0, 0]);
     ctx.fillStyle = c.stroke;
     ctx.fill();
     ctx.restore();
 
-    // ── Separator line before badge zone ──
     if (nd.hasBadges) {
       ctx.save();
       ctx.strokeStyle = c.stroke;
@@ -728,7 +597,6 @@ function draw() {
       ctx.restore();
     }
 
-    // ── Label text (vertically centered in label zone) ──
     ctx.save();
     ctx.font         = LABEL_FONT;
     ctx.textAlign    = 'center';
@@ -737,7 +605,6 @@ function draw() {
     ctx.fillText(nd.label, nd.x, ny + ACCENT_H + (LABEL_ZONE - ACCENT_H) / 2);
     ctx.restore();
 
-    // ── C / F badge pills in badge zone ──
     if (nd.hasBadges) {
       const badges = [];
       if (nd.linkedToCeiling) badges.push({ label: 'C', stroke: '#d4450c', fill: '#fdeee8', text: '#b03308' });
@@ -766,7 +633,6 @@ function draw() {
       });
     }
 
-    // ── Selo de natureza (Classe/Objeto/Atributo/Instância) — extensão da IC ──
     if (nd.tagNatureza) {
       ctx.save();
       ctx.font = '600 10px "Geist Mono", ui-monospace, monospace';
@@ -790,21 +656,8 @@ function draw() {
   }
 }
 
-// ── Fase 1 ────────────────────────────────────────────────
-
 function parseList(str) {
   return str.split(',').map(s => s.trim()).filter(Boolean);
-}
-
-function layoutNodes(nodeList) {
-  const n = nodeList.length;
-  const cx = W / 2, cy = H / 2, rad = Math.min(W, H) * 0.32;
-  nodeList.forEach((nd, i) => {
-    const angle = (2 * Math.PI * i / n) - Math.PI / 2;
-    nd.x = cx + Math.cos(angle) * rad;
-    nd.y = cy + Math.sin(angle) * rad;
-    nd.vx = 0; nd.vy = 0;
-  });
 }
 
 document.getElementById('start-btn').addEventListener('click', () => {
@@ -827,6 +680,7 @@ document.getElementById('start-btn').addEventListener('click', () => {
   E = new Set(); G = new Set(); tempG = new Set();
   seenPairs = new Set(); pairIdx = 0; round = 1; finished = false;
   if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+  ctrlSelectedNodes = [];
 
   tetos.forEach(l => {
     const n = createNode(l, 'teto');
@@ -844,7 +698,6 @@ document.getElementById('start-btn').addEventListener('click', () => {
     E.add(l); G.add(l);
   });
 
-  // Seed initial positions by group so forces converge faster
   nodes.forEach(nd => {
     const targetY = (GROUP_TARGET_Y[nd.group] ?? 0.5) * H;
     nd.x = W / 2 + (Math.random() - 0.5) * W * 0.5;
@@ -859,8 +712,6 @@ document.getElementById('start-btn').addEventListener('click', () => {
   updatePairUI();
   startSim(400);
 });
-
-// ── Fase 2 ────────────────────────────────────────────────
 
 function pathToString(startId, endId) {
   if (startId === endId) return nodes.find(n => n.id === startId)?.label ?? '';
@@ -883,33 +734,18 @@ function pathToString(startId, endId) {
 
 let _aiCurrentPair = null;
 let _aiLastMeio = null;
-let _aiLastTipoAof = null; // tipo AOF sugerido pela IA pro par atual — aplicado às arestas ao confirmar, editável depois clicando na aresta
+let _aiLastTipoAof = null;
 
-// Tipos de relação (AOF) 
 const TIPOS_AOF = [
   'é-um', 'é-parte-de', 'é-composto-por', 'é-uma-variação-de',
   'é-um-atributo-de', 'é-um-componente-de', 'é-um-elemento-de', 'é-caracterizado-por',
 ];
 
-// Notas de desambiguação do domínio — exemplos concretos de termos que a IA
-// já confundiu com outro sentido mais comum na língua portuguesa. A regra
-// geral (ver systemPrompt) já cobre qualquer ambiguidade nova; isto aqui é
-// só reforço pontual pra casos que já se mostraram problemáticos na prática.
-// Editar/ampliar esta lista sempre que surgir uma nova confusão recorrente.
 const DOMAIN_NOTES = `- "Natal", "pré-natal" e "pós-natal": aqui SEMPRE se referem ao contexto de mortalidade/natalidade (gravidez, parto, período neonatal) — NUNCA ao feriado de Natal (25 de dezembro). Trate esses termos exclusivamente como fases do ciclo gestacional/perinatal, mesmo que a palavra "Natal" sozinha remeta ao feriado no uso cotidiano.`;
 
 async function callAI(labelGi, labelEi) {
-  // Contexto do domínio: só os outros elementos, sem repetir o par atual
-  // (evita poluir o prompt e enviesar a IA a puxar relação com o próprio par).
   const domainContext = [...E].filter(el => el !== labelGi && el !== labelEi).join(', ');
-
-  // Conceitos de meio já criados em pares anteriores — passados à parte
-  // (não só misturados no domínio geral) pra IA saber explicitamente que
-  // não deve repetir esses termos como sugestão nova, salvo se for
-  // genuinamente o mesmo conceito de novo.
-  const meiosExistentes = nodes
-    .filter(nd => nd.group === 'meio')
-    .map(nd => nd.label);
+  const meiosExistentes = nodes.filter(nd => nd.group === 'meio').map(nd => nd.label);
   const meiosStr = meiosExistentes.length ? meiosExistentes.join(', ') : '(nenhum ainda)';
 
   const systemPrompt = `Você é um ontólogo aplicando o método Sphere-M de construção de grafos de conhecimento.
@@ -937,23 +773,14 @@ Regras de conteúdo:
 - Use os outros elementos do domínio apenas como contexto de fundo, não force conexão com eles.
 - Conceitos de meio já usados em outros pares deste grafo: ${meiosStr}. NÃO repita nenhum desses como CONCEITO_MEIO — proponha um termo diferente, específico pra esse par. Só repita um termo já usado se ele for literalmente o mesmo conceito exato (não apenas parecido), o que é raro.`;
 
-  const userPrompt = `Domínio: ${domainContext || '(sem outros elementos ainda)'}
-
-Par a analisar: "${labelGi}" e "${labelEi}".
-Lembrete: antes de decidir a relação, confirme o sentido de cada termo do par usando o domínio acima — não o sentido mais comum da palavra fora desse contexto.`;
+  const userPrompt = `Domínio: ${domainContext || '(sem outros elementos ainda)'}\n\nPar a analisar: "${labelGi}" e "${labelEi}".\nLembrete: antes de decidir a relação, confirme o sentido de cada termo do par usando o domínio acima — não o sentido mais comum da palavra fora desse contexto.`;
 
   const apiKey = window.APP_CONFIG?.MISTRAL_API_KEY;
-  if (!apiKey) {
-    console.error(
-      'MISTRAL_API_KEY não configurada. Copie WebFront/config.example.js para ' +
-      'WebFront/config.js e preencha sua chave (config.js não é versionado).'
-    );
-    return null;
-  }
+  if (!apiKey) return null;
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s — evita ficar pendurado pra sempre
+    const timeoutId = setTimeout(() => controller.abort(), 20000); 
 
     const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
       method: 'POST',
@@ -983,20 +810,10 @@ Lembrete: antes de decidir a relação, confirme o sentido de cada termo do par 
   }
 }
 
-// ── Interpreta a resposta estruturada da IA ──────────────────────────
-// Espera o layout RELAÇÃO / CONCEITO_MEIO / TIPO_AOF / JUSTIFICATIVA.
-// Se a IA não seguir o formato à risca (acontece), cai num fallback
-// heurístico em vez de quebrar a UI.
-
 function parseAIResponse(text) {
   if (!text) return { hasRelation: false, meio: null, tipoAof: null, justificativa: '' };
 
   const grab = (label) => {
-    // (?: ... ) é essencial aqui: sem agrupar as alternativas do label,
-    // o "|" vazava pra fora do padrão inteiro e o regex passava a casar
-    // só a palavra solta (ex: "RELAÇÃO" sem os dois-pontos), deixando o
-    // grupo de captura (.+) undefined — daí o .trim() quebrava e a IA
-    // parecia "travada" pra sempre (era esse erro, não lentidão de rede).
     const m = text.match(new RegExp('(?:' + label + ')\\s*:\\s*(.+)', 'i'));
     return m && m[1] ? m[1].trim().replace(/^["'-]+|["'-]+$/g, '').trim() : '';
   };
@@ -1015,21 +832,11 @@ function parseAIResponse(text) {
     };
   }
 
-  // Fallback: a IA não respondeu no formato esperado — usa heurística antiga
-  // sobre o texto livre, só para não travar o fluxo.
-  const negatives = [
-    'não há relação', 'não existe relação', 'não possuem relação',
-    'sem relação', 'não estão diretamente relacionados',
-    'não há conexão', 'não existe conexão', 'não têm relação',
-    'não há uma relação', 'não há nenhuma relação',
-  ];
+  const negatives = ['não há relação', 'não existe relação', 'não possuem relação', 'sem relação'];
   const lower = text.toLowerCase();
   const hasRelation = !negatives.some(phrase => lower.includes(phrase));
   return { hasRelation, meio: null, tipoAof: null, justificativa: text };
 }
-
-
-// ── Helpers de estado do bloco IA ────────────────────────────────────
 
 function showAIIdle() {
   _setAIState('idle');
@@ -1046,15 +853,9 @@ function showAIError() {
   document.getElementById('ai-hint').style.display = 'none';
 }
 
-// Estado da seleção de palavras clicáveis da justificativa da IA —
-// reiniciado a cada novo par (ver renderClickableJustificativa).
 let _aiWordList = [];
 let _aiSelectedIdx = new Set();
 
-// Quebra o texto em palavras clicáveis (pontuação e espaços ficam como
-// texto normal, só a palavra em si vira <span> clicável). Clicar numa
-// palavra a adiciona/remove do campo "meio" — dá pra clicar em várias
-// pra montar um termo composto, na ordem em que aparecem no texto.
 function renderClickableJustificativa(text) {
   const container = document.getElementById('ai-result-text');
   container.innerHTML = '';
@@ -1123,29 +924,22 @@ function showAIResult(parsed) {
   _aiLastMeio = parsed.hasRelation ? parsed.meio : null;
   _aiLastTipoAof = parsed.hasRelation ? parsed.tipoAof : null;
 
-  // Guarda o tipo AOF sugerido pela IA — aplicado automaticamente às
-  // arestas quando o par for confirmado. Não tem mais seletor antes de
-  // confirmar; pra revisar/trocar o tipo depois, é só clicar na aresta
-  // já criada no canvas.
   _aiLastTipoAof = (parsed.hasRelation && TIPOS_AOF.includes(parsed.tipoAof)) ? parsed.tipoAof : null;
 
-  // Checagem extra no cliente: mesmo com a instrução no prompt, a IA pode
-  // ocasionalmente repetir um meio já existente no grafo. Se isso acontecer,
-  // avisa em vez de preencher como se fosse um termo novo.
   const jaExiste = parsed.meio && nodes.some(
     nd => nd.group === 'meio' && nd.label.toLowerCase() === parsed.meio.toLowerCase()
   );
 
   if (parsed.hasRelation && parsed.meio && jaExiste) {
-    hintEl.textContent = `⚠ A IA sugeriu "${parsed.meio}", mas esse termo já existe no grafo. Confira se faz sentido reaproveitar, digite outro abaixo, ou clique nas palavras da análise acima pra montar um termo novo. Depois de confirmar, clique na aresta criada pra revisar o tipo AOF.`;
+    hintEl.textContent = `⚠ A IA sugeriu "${parsed.meio}", mas esse termo já existe no grafo. Confira se faz sentido reaproveitar.`;
     hintEl.style.display = 'block';
     if (inputEl && !inputEl.classList.contains('is-extra')) inputEl.value = '';
   } else if (parsed.hasRelation && parsed.meio) {
-    hintEl.textContent = `A IA sugeriu "${parsed.meio}" como conceito do meio (tipo AOF: ${_aiLastTipoAof || 'não identificado'}) — ajuste o termo se quiser, e depois de confirmar clique na aresta criada pra revisar o tipo AOF.`;
+    hintEl.textContent = `A IA sugeriu "${parsed.meio}" como conceito do meio (tipo AOF: ${_aiLastTipoAof || 'não identificado'}).`;
     hintEl.style.display = 'block';
     if (inputEl && !inputEl.classList.contains('is-extra')) inputEl.value = parsed.meio;
   } else if (parsed.hasRelation) {
-    hintEl.textContent = 'Leia a justificativa acima e digite abaixo o conceito que conecta os dois elementos — ou clique nas palavras dela pra selecionar. O tipo AOF se escolhe depois, clicando na aresta criada.';
+    hintEl.textContent = 'Leia a justificativa acima e digite abaixo o conceito que conecta os dois elementos.';
     hintEl.style.display = 'block';
   } else {
     hintEl.style.display = 'none';
@@ -1163,7 +957,6 @@ async function updatePairUI() {
   if (finished) return;
   nodes.forEach(n => { n.highlight = false; n.pulse = 0; });
 
-  // ── Fim da rodada ──────────────────────────────────────────────
   if (pairIdx >= GE.length) {
     propagateMarks();
     renderAuditPanel();
@@ -1202,7 +995,6 @@ async function updatePairUI() {
     return;
   }
 
-  // ── Exibir par atual ───────────────────────────────────────────
   const [labelA, labelB] = GE[pairIdx];
   _aiCurrentPair = [labelA, labelB];
 
@@ -1211,9 +1003,9 @@ async function updatePairUI() {
   document.getElementById('pair-counter').textContent = `Par ${pairIdx + 1} de ${GE.length}  (Rodada ${round})`;
   document.getElementById('progress-bar').style.width = `${(pairIdx / GE.length) * 100}%`;
   document.getElementById('input-meio').value = '';
-  document.getElementById('input-meio').disabled = true;   // desabilita até a IA responder
+  document.getElementById('input-meio').disabled = true;   
   document.getElementById('confirm-btn').disabled = true;
-  document.getElementById('skip-btn').disabled = false;    // pular sempre disponível
+  document.getElementById('skip-btn').disabled = false;    
   document.getElementById('done-msg').style.display = 'none';
   document.getElementById('complete-msg').style.display = 'none';
   document.getElementById('finished-msg').style.display = 'none';
@@ -1230,11 +1022,11 @@ async function updatePairUI() {
   if (pathStr) {
     msgEl.style.display = 'flex';
     pathEl.textContent = pathStr;
-    inputEl.placeholder = 'Mais nós do meio (vírgula para vários) ou Pular →';
+    inputEl.placeholder = 'Mais nós do meio ou Pular →';
     inputEl.classList.add('is-extra');
   } else {
     msgEl.style.display = 'none';
-    inputEl.placeholder = 'Palavras extraídas do texto da IA — vírgula para várias';
+    inputEl.placeholder = 'Palavras extraídas do texto da IA';
     inputEl.classList.remove('is-extra');
   }
 
@@ -1242,9 +1034,7 @@ async function updatePairUI() {
   if (nb) nb.highlight = true;
   startSim(200);
 
-  // ── Chamada à IA ───────────────────────────────────────────────
   showAILoading();
-
   const currentSession = sessionId;
   const aiText = await callAI(labelA, labelB);
 
@@ -1252,23 +1042,18 @@ async function updatePairUI() {
 
   if (aiText === null) {
     showAIError();
-    // Habilita skip mesmo com erro, para o fluxo não travar
     document.getElementById('skip-btn').disabled = false;
     return;
   }
 
-  // Blindagem: se o parsing/render der algum erro inesperado, cai no
-  // estado de erro em vez de deixar a tela presa em "carregando" pra sempre.
   try {
     showAIResult(parseAIResponse(aiText));
   } catch (err) {
-    console.error('Erro ao processar resposta da IA:', err);
     showAIError();
     document.getElementById('skip-btn').disabled = false;
     return;
   }
 
-  // Habilita entrada e confirmação só agora
   document.getElementById('input-meio').disabled = false;
   document.getElementById('confirm-btn').disabled = false;
   document.getElementById('input-meio').focus();
@@ -1279,11 +1064,6 @@ function confirmPair() {
   const raw = document.getElementById('input-meio')?.value.trim();
   if (!raw) { advancePair(); return; }
 
-  // Tipo AOF sugerido pela IA pro par atual (se houver) — as arestas já
-  // saem com ele, mas dá pra revisar/trocar depois clicando na aresta.
-  const tipoAof = _aiLastTipoAof || null;
-
-  // Support multiple meios separated by comma: A → m1 → m2 → ... → B
   const meios = raw.split(',').map(s => s.trim()).filter(Boolean);
   if (!meios.length) { advancePair(); return; }
 
@@ -1298,14 +1078,9 @@ function confirmPair() {
   else if (nB.linkedToCeiling && !nA.linkedToCeiling) { gi = nB; ei = nA; }
   else if (nA.linkedToFloor && !nB.linkedToFloor) { gi = nB; ei = nA; }
 
-  // Remove any direct edge between the pair
   if (edgeExists(gi.id, ei.id)) removeEdge(gi.id, ei.id);
   if (edgeExists(ei.id, gi.id)) removeEdge(ei.id, gi.id);
 
-  // Build siblings: each meio connects independently to ei and gi (not to each other).
-  // O tipo de relação AOF de cada aresta vem do que a IA sugeriu pra esse
-  // par (_aiLastTipoAof) — mas é sobrescrito pela regra fixa de natureza
-  // (classe/objeto) dentro de getOrCreateEdge, se aplicável.
   meios.forEach((label, idx) => {
     let nm = findNode(label);
     if (!nm) {
@@ -1362,9 +1137,8 @@ function continueLoop() {
   startSim(300);
 }
 
-// ── Encerrar: executa poda automaticamente antes de finalizar ──
 function finishLoop() {
-  executePoda();   // ← poda integrada aqui
+  executePoda();   
   finished = true;
   nodes.forEach(n => { n.highlight = false; n.pulse = 0; });
   document.getElementById('pair-prompt').style.opacity = '0.4';
@@ -1379,9 +1153,6 @@ function finishLoop() {
   startSim(60);
 }
 
-// ── Botões ────────────────────────────────────────────────
-
-// ── Theme toggle ──────────────────────────────────────────
 (function () {
   const html = document.documentElement;
   const btn = document.getElementById('theme-toggle');
@@ -1398,7 +1169,7 @@ function finishLoop() {
     html.setAttribute('data-theme', next);
     localStorage.setItem('sphere-theme', next);
     sync();
-    draw(); // redraw canvas with updated dot/edge colours
+    draw();
   });
 })();
 
@@ -1425,7 +1196,6 @@ document.getElementById('ai-retry-btn').addEventListener('click', async () => {
     document.getElementById('confirm-btn').disabled = false;
     document.getElementById('input-meio').focus();
   } catch (err) {
-    console.error('Erro ao processar resposta da IA:', err);
     showAIError();
   }
 });
@@ -1434,13 +1204,12 @@ document.getElementById('input-meio').addEventListener('keydown', e => {
   if (e.key === 'Escape') advancePair();
 });
 
-// ── Reset ─────────────────────────────────────────────────
-
 function resetAll() {
   sessionId++;
   nodes = []; edges = []; selected = null; nextId = 0;
   E = new Set(); G = new Set(); tempG = new Set();
   GE = []; seenPairs = new Set(); pairIdx = 0; round = 1; finished = false;
+  ctrlSelectedNodes = [];
   if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
   document.getElementById('phase1-panel').style.display = 'block';
   document.getElementById('phase2-panel').style.display = 'none';
@@ -1458,27 +1227,21 @@ function resetAll() {
 document.getElementById('reset-btn').addEventListener('click', resetAll);
 document.getElementById('reset-btn2').addEventListener('click', resetAll);
 
-// ── Seções recolhíveis da sidebar (legenda, auditoria, ponte python) ──
-// Cada seção guarda seu próprio estado (aberta/fechada) no localStorage,
-// independente das outras, e não mexe nos campos de digitar da fase 1.
 (function () {
   const sections = [
     { id: 'legend', toggleId: 'legend-toggle', storageKey: 'sphere-legend-collapsed' },
     { id: 'tag-audit', toggleId: 'tag-audit-toggle', storageKey: 'sphere-tag-audit-collapsed' },
     { id: 'export-section', toggleId: 'export-toggle', storageKey: 'sphere-export-collapsed' },
   ];
-
   sections.forEach(({ id, toggleId, storageKey }) => {
     const section = document.getElementById(id);
     const toggleBtn = document.getElementById(toggleId);
     if (!section || !toggleBtn) return;
-
     const collapsed = localStorage.getItem(storageKey) === '1';
     if (collapsed) {
       section.classList.add('collapsed');
       toggleBtn.setAttribute('aria-expanded', 'false');
     }
-
     toggleBtn.addEventListener('click', () => {
       const nowCollapsed = section.classList.toggle('collapsed');
       toggleBtn.setAttribute('aria-expanded', nowCollapsed ? 'false' : 'true');
@@ -1487,10 +1250,6 @@ document.getElementById('reset-btn2').addEventListener('click', resetAll);
   });
 })();
 
-// ── Mostrar/ocultar rótulos das relações (FOA) ─────────────
-// Botão no canto do canvas + clique direito no grafo alternam a
-// visibilidade das etiquetas (tipo AOF) desenhadas no meio de cada
-// aresta. As linhas e setas continuam aparecendo normalmente.
 (function () {
   const btn = document.getElementById('toggle-edge-labels-btn');
   const icon = document.getElementById('toggle-edge-labels-icon');
@@ -1499,8 +1258,8 @@ document.getElementById('reset-btn2').addEventListener('click', resetAll);
     if (btn) btn.setAttribute('aria-pressed', showEdgeLabels ? 'true' : 'false');
     if (icon) icon.textContent = showEdgeLabels ? '🏷️' : '🚫';
     if (btn) btn.title = showEdgeLabels
-      ? 'Ocultar rótulos das relações (ou clique direito no grafo)'
-      : 'Mostrar rótulos das relações (ou clique direito no grafo)';
+      ? 'Ocultar rótulos das relações'
+      : 'Mostrar rótulos das relações';
   }
 
   function toggleEdgeLabels() {
@@ -1513,22 +1272,8 @@ document.getElementById('reset-btn2').addEventListener('click', resetAll);
   applyState();
   btn?.addEventListener('click', toggleEdgeLabels);
 
-  canvas.addEventListener('contextmenu', (ev) => {
-    ev.preventDefault();
-    toggleEdgeLabels();
-  });
 })();
 
-// ── Exportação para o Python (ponte WebFront → Main.py) ─────
-//
-// Formato combinado com "Python code/importar_grafo.py": grupos do
-// WebFront (teto/piso/relacionado/meio) são traduzidos lá pros papéis
-// que o Grafo.Nodes já usa (ceiling/floor/relevant/gerado). As arestas
-// já saem na mesma orientação ei→meio→gi que Adicionar_No() monta no
-// motor Python, então a reconstrução do lado de lá não precisa adivinhar
-// nada — só seguir a mesma direção. O tipo AOF de cada aresta (escolhido
-// no seletor ao lado do input do meio, manualmente ou pré-preenchido pela
-// IA) vai junto em "tipoAof".
 function buildSessionExport() {
   return {
     sphereM: {
@@ -1544,7 +1289,7 @@ function buildSessionExport() {
       nodes: nodes.map(n => ({
         id: n.id,
         label: n.label,
-        group: n.group, // 'teto' | 'piso' | 'relacionado' | 'meio'
+        group: n.group,
         tagNatureza: n.tagNatureza || null,
         tagCaminho: n.tagCaminho || null,
       })),
@@ -1569,7 +1314,7 @@ function exportSessionJSON() {
 
 document.getElementById('export-json-btn').addEventListener('click', exportSessionJSON);
 
-// ── Mouse ─────────────────────────────────────────────────
+// ── Mouse (Nova lógica do Ctrl + Click) ─────────────────────────────────────────────────
 
 function nodeAt(x, y) {
   return nodes.slice().reverse().find(nd => {
@@ -1590,11 +1335,53 @@ function getPos(e) {
 canvas.addEventListener('mousedown', e => {
   const p = getPos(e), node = nodeAt(p.x, p.y);
   selected = node || null;
+
   if (node) {
-    dragging = node;
-    dragOff = { x: p.x - node.x, y: p.y - node.y };
-    canvas.style.cursor = 'grabbing';
+    if (e.ctrlKey || e.metaKey) {
+      // Se clicou no nó segurando Ctrl
+      const idx = ctrlSelectedNodes.indexOf(node);
+      if (idx > -1) {
+        // Se já estava selecionado, desmarca
+        ctrlSelectedNodes.splice(idx, 1);
+      } else {
+        // Marca o nó
+        ctrlSelectedNodes.push(node);
+      }
+      
+      // Se tiver dois nós selecionados com o Ctrl
+      if (ctrlSelectedNodes.length === 2) {
+        const n1 = ctrlSelectedNodes[0];
+        const n2 = ctrlSelectedNodes[1];
+        
+        // Acha a aresta que liga esses dois nós
+        const edge = edges.find(ed =>
+          (ed.from === n1.id && ed.to === n2.id) ||
+          (ed.from === n2.id && ed.to === n1.id)
+        );
+        
+        if (edge) {
+          // Inverte a visualização da legenda dessa aresta
+          edge.showFOA = !edge.showFOA;
+        }
+        
+        // Limpa a seleção para poder selecionar a próxima aresta
+        ctrlSelectedNodes = [];
+      }
+    } else {
+      // Clique normal (sem Ctrl)
+      ctrlSelectedNodes = []; 
+      dragging = node;
+      dragOff = { x: p.x - node.x, y: p.y - node.y };
+      canvas.style.cursor = 'grabbing';
+    }
     startSim();
+  } else {
+    // Clique num espaço vazio
+    ctrlSelectedNodes = [];
+    if (!(e.ctrlKey || e.metaKey)) {
+      // Se não segurou o Ctrl, limpa todas as arestas
+      edges.forEach(ed => ed.showFOA = false);
+    }
   }
   draw();
 });
@@ -1614,11 +1401,6 @@ canvas.addEventListener('mousemove', e => {
 canvas.addEventListener('mouseup', () => {
   if (dragging) {
     dragging.vx = 0; dragging.vy = 0;
-    // Trava o nó na posição escolhida pelo usuário — sem isso a
-    // simulação de forças (gravidade de grupo, molas, repulsão) ia
-    // puxando o nó de volta pra "sua" faixa assim que o mouse soltasse.
-    // Duplo clique continua abrindo o editor normalmente, e arrastar de
-    // novo (mousedown) sempre volta a mover o nó livremente.
     dragging.fixed = true;
   }
   dragging = null;
@@ -1640,16 +1422,6 @@ const COR_CAMINHO = {
   ambos: '#6a2ca5',
 };
 
-// ── Edição de tipo AOF da aresta (clique na aresta) ──────
-let editingEdge = null;
-let edgeAofSelect = null;
-let edgeTagPanel = null;
-
-// ── Edição inline de arestas (duplo clique) — tipo AOF manual ────────
-// Mesmo padrão do editor de nós: duplo clique perto de uma aresta abre um
-// seletor com os TIPOS_AOF pra corrigir o tipo à mão, caso a IA ou a regra
-// de natureza tenham errado. 
-
 function distToSegment(px, py, ax, ay, bx, by) {
   const dx = bx - ax, dy = by - ay;
   const lenSq = dx * dx + dy * dy;
@@ -1670,6 +1442,10 @@ function edgeAt(x, y) {
   });
   return best;
 }
+
+let editingEdge = null;
+let edgeAofSelect = null;
+let edgeTagPanel = null;
 
 function startEdgeEdit(edge, pos) {
   if (editingNode) commitNodeEdit();
@@ -1710,44 +1486,43 @@ function startEdgeEdit(edge, pos) {
   `;
 
   const selTipo = document.createElement('select');
-selTipo.title = 'Tipo de relação (AOF)';
-selTipo.style.cssText = selStyle;
-const opts = [...TIPOS_AOF.map(t => [t, t])];
-opts.forEach(([v, t]) => {
-  const opt = document.createElement('option');
-  opt.value = v; opt.textContent = t;
-  if ((edge.tipo || '') === v) opt.selected = true;
-  selTipo.appendChild(opt);
-});
+  selTipo.title = 'Tipo de relação (AOF)';
+  selTipo.style.cssText = selStyle;
+  const opts = [...TIPOS_AOF.map(t => [t, t])];
+  opts.forEach(([v, t]) => {
+    const opt = document.createElement('option');
+    opt.value = v; opt.textContent = t;
+    if ((edge.tipo || '') === v) opt.selected = true;
+    selTipo.appendChild(opt);
+  });
 
-// Inserir manualmente
-const inputManual = document.createElement('input');
-inputManual.type = 'text';
-inputManual.placeholder = 'Ou digite outro FOA';
-inputManual.style.cssText = `
-  font: 500 11px "Geist Mono", ui-monospace, monospace;
-  padding: 4px 6px; 
-  border-radius: 6px;
-  border: 1px solid var(--border2, #ccc7ba);
-  background: var(--bg-1, #ffffff); 
-  color: var(--text-1, #1a1a1a);
-  outline: none;
-  width: 150px;
-`;
+  const inputManual = document.createElement('input');
+  inputManual.type = 'text';
+  inputManual.placeholder = 'Ou digite outro FOA';
+  inputManual.style.cssText = `
+    font: 500 11px "Geist Mono", ui-monospace, monospace;
+    padding: 4px 6px; 
+    border-radius: 6px;
+    border: 1px solid var(--border2, #ccc7ba);
+    background: var(--bg-1, #ffffff); 
+    color: var(--text-1, #1a1a1a);
+    outline: none;
+    width: 150px;
+  `;
 
-const ehTipoPadrao = TIPOS_AOF.includes(edge.tipo);
-if (!ehTipoPadrao && edge.tipo) {
-  inputManual.value = edge.tipo;
-  selTipo.value = '';
-}
+  const ehTipoPadrao = TIPOS_AOF.includes(edge.tipo);
+  if (!ehTipoPadrao && edge.tipo) {
+    inputManual.value = edge.tipo;
+    selTipo.value = '';
+  }
 
-selTipo.addEventListener('change', () => {
-  if (selTipo.value !== '') inputManual.value = '';
-});
+  selTipo.addEventListener('change', () => {
+    if (selTipo.value !== '') inputManual.value = '';
+  });
 
-inputManual.addEventListener('input', () => {
-  if (inputManual.value.trim() !== '') selTipo.value = '';
-});
+  inputManual.addEventListener('input', () => {
+    if (inputManual.value.trim() !== '') selTipo.value = '';
+  });
 
   const btnRow = document.createElement('div');
   btnRow.style.display = 'flex';
@@ -1855,7 +1630,6 @@ function startNodeEdit(node) {
   document.body.appendChild(nodeEditInput);
   nodeEditInput.select();
 
-  // ── Painel de tags (natureza + caminho) — extensão da IC ──
   nodeTagPanel = document.createElement('div');
   nodeTagPanel.style.position = 'fixed';
   nodeTagPanel.style.left = nodeEditInput.style.left;
@@ -1906,7 +1680,6 @@ function startNodeEdit(node) {
   selectsRow.appendChild(selNatureza);
   selectsRow.appendChild(selCaminho);
 
-  // ── Botões explícitos pra fechar o painel — sem depender só de blur ──
   const btnRow = document.createElement('div');
   btnRow.style.display = 'flex';
   btnRow.style.gap = '6px';
@@ -1946,7 +1719,6 @@ function startNodeEdit(node) {
     if (e.key === 'Escape') { e.preventDefault(); cancelNodeEdit(); }
   });
 
-  // Enter/Escape também funcionam com foco nos selects — antes só o input reagia.
   [selNatureza, selCaminho].forEach(sel => {
     sel.addEventListener('keydown', e => {
       if (e.key === 'Enter')  { e.preventDefault(); commitNodeEdit(); }
@@ -1954,9 +1726,6 @@ function startNodeEdit(node) {
     });
   });
 
-  // Clicar fora do input E do painel de tags fecha (confirmando) — antes
-  // nada fechava o painel se o foco saísse de um select direto pro canvas,
-  // e ele ficava "travado" na tela.
   const outsideClickHandler = e => {
     if (!editingNode) return;
     if (nodeEditInput?.contains(e.target)) return;
@@ -1974,12 +1743,10 @@ function commitNodeEdit() {
     const oldLabel = editingNode.label;
     editingNode.label = newLabel;
 
-    // Atualiza os conjuntos E, G, tempG para refletir o novo nome
     if (E.has(oldLabel))     { E.delete(oldLabel);     E.add(newLabel); }
     if (G.has(oldLabel))     { G.delete(oldLabel);     G.add(newLabel); }
     if (tempG.has(oldLabel)) { tempG.delete(oldLabel); tempG.add(newLabel); }
 
-    // Atualiza seenPairs que referenciam o label antigo
     const updatedPairs = new Set();
     for (const pair of seenPairs) {
       const parts = pair.split('|||');
@@ -1989,16 +1756,11 @@ function commitNodeEdit() {
     seenPairs = updatedPairs;
   }
 
-  // ── Salva as tags escolhidas (extensão da IC) ──
   if (nodeTagPanel) {
     const novaNatureza = nodeTagPanel._selNatureza.value || null;
     const novoCaminho  = nodeTagPanel._selCaminho.value || null;
     editingNode.tagNatureza = novaNatureza;
     editingNode.tagCaminho  = novoCaminho;
-    // Marca como manual: sem isso, tagCaminhoManual fica 'false' e o nó
-    // (1) nunca vira semente para propagatePathTag(), e (2) tem sua tag
-    // apagada de volta pra null na primeira propagação seguinte, porque
-    // propagatePathTag() só preserva tags de nós com tagCaminhoManual = true.
     editingNode.tagCaminhoManual = !!novoCaminho;
     reavaliarTiposDeArestas();
     nodeTagPanel._cleanup?.();

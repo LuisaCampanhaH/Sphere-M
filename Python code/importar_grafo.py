@@ -19,7 +19,8 @@ Ou sem argumento (pede o caminho interativamente):
 import json
 import sys
 
-from Main import Grafo, No_Grafo, _Imprimir_Status
+from Main import Grafo, No_Grafo
+from metricas import imprimir_metricas
 from visualizacao import desenhar_grafo
 
 
@@ -36,17 +37,10 @@ def Carregar_De_Json(caminho: str) -> Grafo:
     """
     Reconstrói um Grafo a partir do .json exportado pelo botão
     "Exportar sessão (JSON)" do WebFront.
-
-    As arestas exportadas já seguem a mesma orientação ei -> meio -> gi
-    que Adicionar_No() monta no fluxo manual do Main.py, então a
-    reconstrução aqui não precisa adivinhar direção nenhuma — só seguir
-    o que já veio pronto do outro lado.
     """
     with open(caminho, encoding="utf-8") as f:
         bruto = json.load(f)
 
-    # Aceita tanto o objeto completo ({"sphereM": {...}}) quanto só o
-    # conteúdo interno, caso alguém repasse o payload já "desembrulhado".
     payload = bruto.get("sphereM", bruto)
 
     grafo = Grafo()
@@ -74,27 +68,17 @@ def Carregar_De_Json(caminho: str) -> Grafo:
         origem  = id_para_no.get(e["from"])
         destino = id_para_no.get(e["to"])
         if origem is None or destino is None:
-            continue  # aresta órfã (não deveria acontecer, mas não quebra o import)
+            continue
 
         if destino not in origem.vizinhos:
             origem.vizinhos.append(destino)
         if origem not in destino.vizinhos_inv:
             destino.vizinhos_inv.append(origem)
 
-        # FAO: usado só pela visualização pyvis (rótulo/tooltip da aresta).
-        # "tipoAof" vem do seletor de tipo AOF do WebFront (manual ou
-        # pré-preenchido pela sugestão da IA); fica vazio só em sessões
-        # exportadas antes dessa mudança, ou se o par foi confirmado sem
-        # selecionar um tipo.
         grafo.FAO.append((origem.valor, destino.valor, e.get("tipoAof") or ""))
 
     grafo._Propagar_Marcas()
 
-    # Reconstrói L (relações por par gi/ei) a partir da mesma estrutura
-    # ei->meio->gi: cada nó "gerado" (meio) liga um conjunto de origens
-    # (vizinhos_inv) a um conjunto de destinos (vizinhos). Isso é o que
-    # Adicionar_L já fazia durante o fluxo manual — aqui só é feito de
-    # uma vez, depois de já ter todo o grafo montado.
     for no_meio in grafo.Nodes:
         if no_meio.papel != "gerado":
             continue
@@ -124,7 +108,7 @@ if __name__ == "__main__":
     print(f"  R (RELEVANT) : {grafo.R}")
     print(f"  Total de nós : {len(grafo.Nodes)}")
 
-    _Imprimir_Status(grafo, grafo.iteracao_atual)
+    imprimir_metricas(grafo)
 
     ver = input("\nDeseja gerar a visualização interativa (pyvis)? (s/n): ").strip().lower()
     if ver == "s":

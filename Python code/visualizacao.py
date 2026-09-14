@@ -15,7 +15,6 @@ TAMANHOS = {
     "gerado"  : 35,
 }
 
-
 def desenhar_grafo(grafo):
     net = Network(
         notebook=False,
@@ -25,30 +24,30 @@ def desenhar_grafo(grafo):
         font_color="#000000",
         directed=True
     )
-
+    
     # Coleta todos os valores que aparecem nas arestas FAO
     nos_no_fao = set()
-    for (leg, palavra, _) in grafo.FAO:
-        nos_no_fao.add(leg)
-        nos_no_fao.add(palavra)
-
+    for (origem, destino, _) in grafo.FAO:
+        nos_no_fao.add(origem)
+        nos_no_fao.add(destino)
+        
     # Usa os nós do grafo quando disponíveis (têm .papel),
     # e adiciona como "gerado" qualquer nó que só exista no FAO
     nos_ja_adicionados = set()
-
     for no in grafo.Nodes:
         if no.valor not in nos_no_fao:
-            continue  # nó ainda sem arestas — não exibe
+            continue  # nó ainda sem arestas não exibe
+            
         papel  = no.papel
         cor    = CORES.get(papel, CORES["gerado"])
         tam    = TAMANHOS.get(papel, TAMANHOS["gerado"])
-
+        
         # Tooltip mostra o papel e as marcas de conexão
         teto_str = "V" if no.achou_teto else "X"
         piso_str = "V" if no.achou_piso else "X"
         titulo   = f"{no.valor}\npapel: {papel}\nteto: {teto_str}  piso: {piso_str}"
-
-        # Tags vindas de uma sessão do WebFront (natureza/caminho) —
+        
+        # Tags vindas de uma sessão do WebFront (natureza/caminho) 
         # ausentes em grafos construídos direto pelo CLI do Main.py.
         tag_natureza = getattr(no, "tag_natureza", None)
         tag_caminho  = getattr(no, "tag_caminho", None)
@@ -56,7 +55,7 @@ def desenhar_grafo(grafo):
             titulo += f"\nnatureza: {tag_natureza}"
         if tag_caminho:
             titulo += f"\ncaminho: {tag_caminho}"
-
+            
         net.add_node(
             no.valor,
             label=no.valor,
@@ -68,8 +67,8 @@ def desenhar_grafo(grafo):
             shadow=True
         )
         nos_ja_adicionados.add(no.valor)
-
-    # Qualquer nó no FAO que não esteja em grafo.Nodes (edge case) — trata como gerado
+        
+    # Qualquer nó no FAO que não esteja em grafo.Nodes (edge case) -> trata como gerado
     for valor in nos_no_fao - nos_ja_adicionados:
         net.add_node(
             valor,
@@ -80,11 +79,11 @@ def desenhar_grafo(grafo):
             font={"size": 13, "color": "#1a1a1a", "bold": True, "vadjust": 0},
             shadow=True
         )
-
-    # Arestas
-    for (leg, palavra, peso) in grafo.FAO:
+        
+    # Arestas desenhadas na mesma direção presente no grafo
+    for (origem, destino, peso) in grafo.FAO:
         net.add_edge(
-            leg, palavra,
+            origem, destino,
             label=peso,
             title=peso,
             color={"color": "#111111", "opacity": 1.0},
@@ -93,7 +92,7 @@ def desenhar_grafo(grafo):
             smooth=False,
             arrows={"to": {"enabled": True, "scaleFactor": 1.2}}
         )
-
+        
     # Legenda injetada como HTML fixo no canto
     legenda_html = """
     <div style="
@@ -114,7 +113,7 @@ def desenhar_grafo(grafo):
       <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#1e6104;margin-right:6px;vertical-align:middle"></span> Gerado pela IA
     </div>
     """
-
+    
     net.set_options("""
     {
       "layout": { "randomSeed": 42 },
@@ -141,10 +140,10 @@ def desenhar_grafo(grafo):
       }
     }
     """)
-
+    
     net.html = net.generate_html()
-
-    # Injeta legenda e desliga física após estabilização
+    
+    # Injeta legenda e desliga física após estabilizar
     net.html = net.html.replace(
         "</body>",
         f"""
@@ -156,9 +155,9 @@ def desenhar_grafo(grafo):
         </script>
         </body>"""
     )
-
+    
     with open("meu_grafo_interativo.html", "w", encoding="utf-8") as f:
         f.write(net.html)
-
+        
     import webbrowser, os
     webbrowser.open("file://" + os.path.abspath("meu_grafo_interativo.html"))

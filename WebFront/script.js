@@ -472,10 +472,10 @@ function draw() {
     if ((showEdgeLabels || isSelectedEdge) && e.tipo) {       
       const midX = (a.x + tipX) / 2, midY = (a.y + tipY) / 2;       
       ctx.save();       
-      ctx.font = '700 16px "Geist Mono", ui-monospace, monospace';       
+      ctx.font = '700 11px "Geist Mono", ui-monospace, monospace';       
       const textW = ctx.measureText(e.tipo).width;       
-      const padX = 7, padY = 5;       
-      roundRect(midX - textW / 2 - padX, midY - 11 - padY, textW + padX * 2, 22 + padY * 2, 5);       
+      const padX = 5, padY = 3;       
+      roundRect(midX - textW / 2 - padX, midY - 7.5 - padY, textW + padX * 2, 15 + padY * 2, 5);       
       ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#faf9f6';       
       ctx.globalAlpha = 0.97;       
       ctx.fill();       
@@ -1177,7 +1177,7 @@ function buildSessionExport() {
         tagNatureza: n.tagNatureza || null,         
         tagCaminho: n.tagCaminho || null,       
       })),       
-      edges: edges.map(e => ({ from: e.from, to: e.to, tipoAof: e.tipoAof || null })),     
+      edges: edges.map(e => ({ from: e.from, to: e.to, tipoAof: e.tipo || null })),     
     },   
   }; 
 }
@@ -1197,6 +1197,157 @@ function exportSessionJSON() {
 }
 
 document.getElementById('export-json-btn').addEventListener('click', exportSessionJSON);  
+
+// ── Importação de sessão (JSON) — drag-and-drop no canvas ou botão ──
+
+function resetImportState() {   
+  nodes = []; edges = []; selected = null; dragging = null; nextId = 0;   
+  ctrlSelectedNodes = [];   
+  E = new Set(); G = new Set(); tempG = new Set(); GE = []; seenPairs = new Set();   
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }   
+  sessionId++; 
+}
+
+function importSessionFromObject(raw) {   
+  const data = (raw && raw.sphereM) ? raw.sphereM : raw;   
+  if (!data || !Array.isArray(data.nodes)) {     
+    alert('JSON inválido: não encontrei "nodes" no formato esperado (sphereM.nodes).');     
+    return false;   
+  }
+  
+  resetImportState();   
+  
+  const idMap = new Map();   
+  data.nodes.forEach(n => {     
+    const group = ['teto', 'piso', 'relacionado', 'meio'].includes(n.group) ? n.group : 'relacionado';     
+    const node = createNode(String(n.label ?? ''), group);     
+    node.tagNatureza = n.tagNatureza || null;     
+    const tagCaminho = n.tagCaminho || null;     
+    node.tagCaminho = tagCaminho;     
+    // Só tratamos positivo/negativo como "semente manual" — "ambos" é sempre
+    // recalculado por propagação (mesma regra usada durante a sessão original).     
+    node.tagCaminhoManual = tagCaminho === 'positivo' || tagCaminho === 'negativo';     
+    if (n.id !== undefined) idMap.set(n.id, node);   
+  });   
+  
+  (data.edges || []).forEach(e => {     
+    const a = idMap.get(e.from);     
+    const b = idMap.get(e.to);     
+    if (!a || !b) return;     
+    const tipo = e.tipoAof || null;     
+    edges.push({ from: a.id, to: b.id, tipo, tipoManual: !!tipo, showFOA: false });   
+  });   
+  
+  nodes.forEach(nd => {     
+    if (nd.group === 'teto') nd.linkedToCeiling = true;     
+    if (nd.group === 'piso') nd.linkedToFloor = true;     
+    if (nd.group !== 'meio') { E.add(nd.label); G.add(nd.label); }     
+    const targetY = (GROUP_TARGET_Y[nd.group] ?? 0.5) * H;     
+    nd.x = W / 2 + (Math.random() - 0.5) * W * 0.5;     
+    nd.y = targetY + (Math.random() - 0.5) * 40;     
+    nd.vx = 0; nd.vy = 0;   
+  });   
+  propagateMarks();   
+  
+  // Marca como "já perguntados" os pares que já chegaram a uma conexão via nó
+  // do meio (teto -> meio -> piso), pra não repetir esses pares se a rodada continuar.
+  // Obs.: pares que foram "pulados" sem gerar conexão não ficam no .json, então
+  // não tem como recuperar esse histórico — só o que virou aresta.   
+  nodes.filter(nd => nd.group === 'meio').forEach(meio => {     
+    const gis = edges.filter(e => e.to === meio.id).map(e => nodes.find(n => n.id === e.from)?.label).filter(Boolean);     
+    const eis = edges.filter(e => e.from === meio.id).map(e => nodes.find(n => n.id === e.to)?.label).filter(Boolean);     
+    gis.forEach(gi => eis.forEach(ei => {       
+      if (gi === ei) return;       
+      seenPairs.add([gi, ei].sort().join('|||'));     
+    }));   
+  });   
+  
+  round = Number(data.round) > 0 ? Number(data.round) : 1;   
+  finished = !!data.finished;   
+  
+  const domain = data.domain || {};   
+  document.getElementById('input-teto').value = (domain.ceiling || nodes.filter(n => n.group === 'teto').map(n => n.label)).join(', ');   
+  document.getElementById('input-piso').value = (domain.floor || nodes.filter(n => n.group === 'piso').map(n => n.label)).join(', ');   
+  document.getElementById('input-rel').value = (domain.relevant || nodes.filter(n => n.group === 'relacionado').map(n => n.label)).join(', ');   
+  
+  document.getElementById('phase1-panel').style.display = 'none';   
+  document.getElementById('phase2-panel').style.display = 'block';   
+  document.getElementById('stop-btn').disabled = false;   
+  
+  if (finished) {     
+    nodes.forEach(n => { n.highlight = false; n.pulse = 0; });     
+    document.getElementById('pair-prompt').style.opacity = '0.4';     
+    document.getElementById('input-meio').disabled = true;     
+    document.getElementById('confirm-btn').disabled = true;     
+    document.getElementById('skip-btn').disabled = true;     
+    document.getElementById('stop-btn').disabled = true;     
+    document.getElementById('done-msg').style.display = 'none';     
+    document.getElementById('complete-msg').style.display = 'none';     
+    document.getElementById('already-connected-msg').style.display = 'none';     
+    document.getElementById('finished-msg').style.display = 'flex';   
+  } else {     
+    document.getElementById('finished-msg').style.display = 'none';     
+    GE = buildGE();     
+    pairIdx = 0;     
+    updatePairUI();   
+  }
+  
+  renderAuditPanel();   
+  startSim(400);   
+  return true; 
+}
+
+function parseAndImportFile(file) {   
+  if (!file) return;   
+  const reader = new FileReader();   
+  reader.onload = () => {     
+    let data;     
+    try {       
+      data = JSON.parse(reader.result);     
+    } catch (err) {       
+      alert('Não consegui ler esse arquivo como JSON.');       
+      return;     
+    }     
+    importSessionFromObject(data);   
+  };   
+  reader.onerror = () => alert('Falha ao ler o arquivo.');   
+  reader.readAsText(file); 
+}
+
+document.getElementById('import-json-btn').addEventListener('click', () => {   
+  document.getElementById('import-json-input').click(); 
+}); 
+document.getElementById('import-json-input').addEventListener('change', (e) => {   
+  const file = e.target.files && e.target.files[0];   
+  parseAndImportFile(file);   
+  e.target.value = ''; 
+});
+
+(function () {   
+  const wrap = document.getElementById('canvas-wrap');   
+  if (!wrap) return;   
+  let dragCounter = 0;   
+  wrap.addEventListener('dragover', (e) => {     
+    e.preventDefault();     
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';   
+  });   
+  wrap.addEventListener('dragenter', (e) => {     
+    e.preventDefault();     
+    dragCounter++;     
+    wrap.classList.add('dropzone-active');   
+  });   
+  wrap.addEventListener('dragleave', () => {     
+    dragCounter = Math.max(0, dragCounter - 1);     
+    if (dragCounter === 0) wrap.classList.remove('dropzone-active');   
+  });   
+  wrap.addEventListener('drop', (e) => {     
+    e.preventDefault();     
+    dragCounter = 0;     
+    wrap.classList.remove('dropzone-active');     
+    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];     
+    parseAndImportFile(file);   
+  }); 
+})();
 
 // Mouse (Nova lógica do Ctrl + Click)
 function nodeAt(x, y) {   

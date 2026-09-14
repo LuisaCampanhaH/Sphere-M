@@ -24,6 +24,12 @@
           <span id="toggle-edge-labels-icon">🏷️</span>
         </button>
         <div id="canvas-overlay-hint">drag · duplo clique no nó pra editar · clique na aresta pro tipo AOF · clique direito: mostrar/ocultar rótulos · delete</div>
+        <div id="dropzone-overlay">
+          <div id="dropzone-inner">
+            <span id="dropzone-icon">⇩</span>
+            <span>solte o .json da sessão pra importar</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -244,6 +250,9 @@
         <div id="export-content" class="collapsible-content">
           <button id="export-json-btn" class="btn-ghost" style="width:100%">⇩ Exportar sessão (JSON)</button>
           <p id="export-hint">gera um .json com nós, arestas e tags — leia com <code>Python code/importar_grafo.py</code> pra calcular raio, densidade, eficiência e produtividade, ou gerar a visualização pyvis.</p>
+          <button id="import-json-btn" class="btn-ghost" style="width:100%">⇧ Importar sessão (JSON)</button>
+          <input type="file" id="import-json-input" accept="application/json,.json" hidden />
+          <p id="import-hint">carrega um .json exportado daqui (ou gerado pelo mesmo formato) de volta pro canvas — também dá pra arrastar o arquivo direto pro grafo.</p>
         </div>
       </div>
 

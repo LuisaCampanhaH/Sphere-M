@@ -148,7 +148,7 @@ function propagateMarks() {
   const cVisited = new Set(cQueue);
   while (cQueue.length) {
     const cur = cQueue.shift();
-    const neighbors = edges.filter(e => e.to === cur).map(e => e.from);
+    const neighbors = edges.filter(e => e.from === cur).map(e => e.to);
     for (const nb of neighbors) {
       if (!cVisited.has(nb)) {
         cVisited.add(nb);
@@ -163,7 +163,7 @@ function propagateMarks() {
   const fVisited = new Set(fQueue);
   while (fQueue.length) {
     const cur = fQueue.shift();
-    const neighbors = edges.filter(e => e.from === cur).map(e => e.to);
+    const neighbors = edges.filter(e => e.to === cur).map(e => e.from);
     for (const nb of neighbors) {
       if (!fVisited.has(nb)) {
         fVisited.add(nb);
@@ -1091,8 +1091,8 @@ function confirmPair() {
       tempG.add(label);
       E.add(label);
     }
-    getOrCreateEdge(ei.id, nm.id, _aiLastTipoAof);
-    getOrCreateEdge(nm.id, gi.id, _aiLastTipoAof);
+    getOrCreateEdge(gi.id, nm.id, _aiLastTipoAof);
+    getOrCreateEdge(nm.id, ei.id, _aiLastTipoAof);
   });
 
   _aiLastTipoAof = null;

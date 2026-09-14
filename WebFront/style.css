@@ -137,6 +137,42 @@ canvas {
   transition: background 0.3s, border-color 0.3s, color 0.3s;
 }
 
+/* Overlay de drag-and-drop pra importar sessão (JSON) */
+#dropzone-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 2px dashed var(--accent);
+  border-radius: 16px;
+  z-index: 20;
+  pointer-events: none;
+}
+#canvas-wrap.dropzone-active #dropzone-overlay {
+  display: flex;
+}
+#dropzone-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 26px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  box-shadow: var(--shadow-md);
+  font-family: 'Geist', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+#dropzone-icon {
+  font-size: 20px;
+  color: var(--accent);
+}
+
 /* Botão: mostrar/ocultar rótulos das relações (FOA) */
 #toggle-edge-labels-btn {
   position: absolute;
@@ -904,6 +940,20 @@ button:active { transform: scale(0.98); }
   border-radius: 3px;
   padding: 1px 4px;
   color: var(--text);
+}
+
+#import-json-btn {
+  margin-top: 10px;
+}
+
+#import-hint {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+  margin-top: 8px;
+  transition: color 0.3s;
 }
 
 /* Bloco da IA */

@@ -64,6 +64,30 @@ let seenPairs = new Set();
 let pairIdx = 0; 
 let round = 1; 
 let finished = false; 
+let pairsAccepted = 0;          
+let pairsAccepted_modificados = 0;
+let paresIaSim = 0;
+let paresIaSimAceitos = 0;
+let historicoPorRodada = [];
+let rodadaEInicio = 0;
+let paresAvaliadosRodada = 0;
+let paresAceitosRodada = 0;
+let _aiLastHasRelation = false;
+let _aiJaContabilizado = false;
+
+function _iniciarRodadaStats() {
+  rodadaEInicio = E.size;
+  paresAvaliadosRodada = 0;
+  paresAceitosRodada = 0;
+}
+function _fecharRodadaStats() {
+  historicoPorRodada.push({
+    rodada: round,
+    E_inicio: rodadaEInicio,
+    pares_avaliados: paresAvaliadosRodada,
+    pares_aceitos: paresAceitosRodada,
+  });
+}
 
 const GROUP_COLORS = {   
   teto: { fill: '#fdeee8', stroke: '#d4450c', text: '#7a2506' },   
@@ -652,6 +676,7 @@ document.getElementById('start-btn').addEventListener('click', () => {
   });   
   GE = buildGE();   
   pairIdx = 0;   
+  _iniciarRodadaStats();
   document.getElementById('phase1-panel').style.display = 'none';   
   document.getElementById('phase2-panel').style.display = 'block';   
   updatePairUI();   
@@ -691,25 +716,25 @@ async function callAI(labelGi, labelEi) {
   const meiosStr = meiosExistentes.length ? meiosExistentes.join(', ') : '(nenhum ainda)';   
   const systemPrompt = `Você é um ontólogo aplicando o método Sphere-M de construção de grafos de conhecimento. REGRA MAIS IMPORTANTE, aplique-a antes de qualquer outra coisa (DESAMBIGUAÇÃO DE TERMOS): Muitas palavras do português têm mais de um sentido possível. Você NUNCA deve assumir o sentido mais comum ou mais frequente de uma palavra no uso cotidiano. Para CADA termo do par abaixo, primeiro decida qual sentido faz sentido dentro do domínio informado (a lista de "Domínio" no final e os outros conceitos já usados no grafo) - depois de fixar esse sentido, avalie a relação. Se um termo puder ser lido de duas formas diferentes, escolha sempre a leitura compatível com o domínio, mesmo que ela não seja a mais óbvia fora desse contexto. Casos já conhecidos onde isso é crítico (mas a regra vale para qualquer termo ambíguo, não apenas estes): ${DOMAIN_NOTES} O método conecta dois conceitos ("${labelGi}" e "${labelEi}") através de um único CONCEITO INTERMEDIÁRIO (o "meio"), usando relações do tipo AOF: ${TIPOS_AOF.join(' | ')} Sua tarefa: dado um par de conceitos, decidir se existe (ou pode ser construída) uma relação ontológica direta e plausível entre eles, e se sim, propor UM conceito intermediário curto que ligue os dois - de forma que "${labelGi}" se relacione com o meio, e o meio se relacione com "${labelEi}", cada ligação usando um dos tipos AOF acima. Regras estritas de formato responda SEMPRE exatamente neste layout, sem nenhum texto antes ou depois: RELAÇÃO: SIM ou NÃO CONCEITO_MEIO: <1 a 3 palavras, ou "-" se RELAÇÃO for NÃO> TIPO_AOF: <um dos tipos da lista acima, ou "-" se RELAÇÃO for NÃO> JUSTIFICATIVA: <1 a 2 frases, direto, sem introduções como "com certeza" ou "ótima pergunta"> Regras de conteúdo: Não invente relações fracas, genéricas ou forçadas só para preencher a resposta. Se a relação exigir mais de um passo intermediário óbvio ou for artificial, responda RELAÇÃO: NÃO - O CONCEITO_MEIO deve ser um substantivo ou expressão curta, nunca uma frase. - Use os outros elementos do domínio apenas como contexto de fundo, não force conexão com eles. - Conceitos de meio já usados em outros pares deste grafo: ${meiosStr}. NÃO repita nenhum desses como CONCEITO_MEIO - proponha um termo diferente, específico pra esse par. Só repita um termo já usado se ele for literalmente o mesmo conceito exato (não apenas parecido), o que é raro.`;   
   const userPrompt = `Domínio: ${domainContext || '(sem outros elementos ainda)'}\n\nPar a analisar: "${labelGi}" e "${labelEi}".\nLembrete: antes de decidir a relação, confirme o sentido de cada termo do par usando o domínio acima, não o sentido mais comum da palavra fora desse contexto.`;   
-  const apiKey = window.APP_CONFIG?.MISTRAL_API_KEY;   
+  const apiKey = window.APP_CONFIG?.MISTRAL_API_KEY;  // GROQ_API_KEY 
   if (!apiKey) return null;   
   try {     
     const controller = new AbortController();     
     const timeoutId = setTimeout(() => controller.abort(), 20000);      
-    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {       
+    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {     // https://api.groq.com/openai/v1/chat/completions
       method: 'POST',       
       headers: {         
         'Content-Type': 'application/json',         
         'Authorization': `Bearer ${apiKey}`,       
       },       
       body: JSON.stringify({         
-        model: 'ministral-8b-latest',         
+        model: 'ministral-8b-latest',         // openai/gpt-oss-120b
         messages: [           
           { role: 'system', content: systemPrompt },           
           { role: 'user',   content: userPrompt   },         
         ],         
         temperature: 0.2,         
-        max_tokens: 300,       
+        max_tokens: 300,       // 2048
       }),       
       signal: controller.signal,     
     });     
@@ -805,12 +830,19 @@ function toggleAIWord(idx, span) {
   }
   if (_aiSelectedIdx.size) {     
     const ordenado = [..._aiSelectedIdx].sort((a, b) => a - b).map(i => _aiWordList[i]);     
-    document.getElementById('input-meio').value = ordenado.join(' '); 
+    const texto = ordenado.join(' ');
+    document.getElementById('input-meio').value = texto;
+    _aiLastMeio = texto;
   }
 }
 
 function showAIResult(parsed) {   
   _setAIState('result');   
+  _aiLastHasRelation = parsed.hasRelation;
+if (!_aiJaContabilizado) {
+  _aiJaContabilizado = true;
+  if (parsed.hasRelation) paresIaSim++;
+}
   let displayText = parsed.justificativa || '';   
   if (parsed.hasRelation && parsed.tipoAof) {     
     displayText = `[${parsed.tipoAof}] ${displayText}`;   
@@ -826,8 +858,9 @@ function showAIResult(parsed) {
   }
   const hintEl = document.getElementById('ai-hint');   
   const inputEl = document.getElementById('input-meio');   
-  _aiLastMeio = parsed.hasRelation ? parsed.meio : null;   
-  _aiLastTipoAof = parsed.hasRelation ? parsed.tipoAof : null;   
+  const meioLimpo = parsed.meio ? parsed.meio.replace(/\*+/g, '').trim() : null;
+  _aiLastMeio = parsed.hasRelation ? meioLimpo : null;
+  _aiLastTipoAof = parsed.hasRelation ? parsed.tipoAof : null;  
   _aiLastTipoAof = (parsed.hasRelation && TIPOS_AOF.includes(parsed.tipoAof)) ? parsed.tipoAof : null;   
   const jaExiste = parsed.meio && nodes.some(     
     nd => nd.group === 'meio' && nd.label.toLowerCase() === parsed.meio.toLowerCase()   
@@ -839,7 +872,7 @@ function showAIResult(parsed) {
   } else if (parsed.hasRelation && parsed.meio) {     
     hintEl.textContent = `A IA sugeriu "${parsed.meio}" como conceito do meio (tipo AOF: ${_aiLastTipoAof || 'não identificado'}).`;     
     hintEl.style.display = 'block';     
-    if (inputEl && !inputEl.classList.contains('is-extra')) inputEl.value = parsed.meio;   
+    if (inputEl && !inputEl.classList.contains('is-extra')) inputEl.value = meioLimpo || ''; 
   } else if (parsed.hasRelation) {     
     hintEl.textContent = 'Leia a justificativa acima e digite abaixo o conceito que conecta os dois elementos.';     
     hintEl.style.display = 'block';   
@@ -922,6 +955,7 @@ async function updatePairUI() {
   if (na) na.highlight = true;   
   if (nb) nb.highlight = true;   
   startSim(200);   
+  _aiJaContabilizado = false;
   showAILoading();   
   const currentSession = sessionId;   
   const aiText = await callAI(labelA, labelB);   
@@ -943,11 +977,12 @@ async function updatePairUI() {
   document.getElementById('input-meio').focus(); 
 }
 
-// CORREÇÃO APLICADA: Fluxo Teto -> Meio -> Piso
+// Fluxo Teto -> Meio -> Piso
 function confirmPair() {   
   if (finished) return;   
   const raw = document.getElementById('input-meio')?.value.trim();   
   if (!raw) { advancePair(); return; }   
+  const humanoModificou = _aiLastMeio === null || raw !== _aiLastMeio;
   const meios = raw.split(',').map(s => s.trim()).filter(Boolean);   
   if (!meios.length) { advancePair(); return; }   
   
@@ -981,13 +1016,19 @@ function confirmPair() {
     getOrCreateEdge(gi.id, nm.id, _aiLastTipoAof);     
     getOrCreateEdge(nm.id, ei.id, _aiLastTipoAof);   
   });   
-  
+
+  pairsAccepted++;
+  if (humanoModificou) pairsAccepted_modificados++;
+  paresAceitosRodada++;
+  if (_aiLastHasRelation) paresIaSimAceitos++;
+
   _aiLastTipoAof = null;   
   advancePair(); 
 }
 
 function advancePair() {   
-  if (finished) return;   
+  if (finished) return;  
+  if (pairIdx < GE.length) paresAvaliadosRodada++;    
   pairIdx++;   
   updatePairUI();   
   startSim(300); 
@@ -995,8 +1036,10 @@ function advancePair() {
 
 function startNextRound() {   
   if (finished) return;   
+  _fecharRodadaStats();
   round++;   
   pairIdx = 0;   
+  _iniciarRodadaStats();  
   document.getElementById('done-msg').style.display = 'none';   
   document.getElementById('complete-msg').style.display = 'none';   
   document.getElementById('pair-prompt').style.opacity = '1';   
@@ -1009,10 +1052,12 @@ function startNextRound() {
 }
 
 function continueLoop() {   
-  if (finished) return;   
+  if (finished) return; 
+  _fecharRodadaStats();  
   round++;   
   GE = buildGEforContinue();   
   pairIdx = 0;   
+  _iniciarRodadaStats();
   document.getElementById('done-msg').style.display = 'none';   
   document.getElementById('complete-msg').style.display = 'none';   
   document.getElementById('pair-prompt').style.opacity = '1';   
@@ -1025,6 +1070,7 @@ function continueLoop() {
 }
 
 function finishLoop() {   
+   _fecharRodadaStats();
   executePoda();      
   finished = true;   
   nodes.forEach(n => { n.highlight = false; n.pulse = 0; });   
@@ -1097,7 +1143,17 @@ function resetAll() {
   nodes = []; edges = []; selected = null; nextId = 0;   
   E = new Set(); G = new Set(); tempG = new Set();   
   GE = []; seenPairs = new Set(); pairIdx = 0; round = 1; finished = false;   
-  ctrlSelectedNodes = [];   
+  ctrlSelectedNodes = [];  
+  pairsAccepted = 0;               
+  pairsAccepted_modificados = 0;  
+  paresIaSim = 0;
+  paresIaSimAceitos = 0;
+  historicoPorRodada = [];
+  rodadaEInicio = 0;
+  paresAvaliadosRodada = 0;
+  paresAceitosRodada = 0;
+  _aiLastHasRelation = false;
+  _aiJaContabilizado = false;
   if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }   
   document.getElementById('phase1-panel').style.display = 'block';   
   document.getElementById('phase2-panel').style.display = 'none';   
@@ -1177,7 +1233,20 @@ function buildSessionExport() {
         tagNatureza: n.tagNatureza || null,         
         tagCaminho: n.tagCaminho || null,       
       })),       
-      edges: edges.map(e => ({ from: e.from, to: e.to, tipoAof: e.tipo || null })),     
+      edges: edges.map(e => ({ from: e.from, to: e.to, tipoAof: e.tipo || null })),  
+      paresAvaliados: [...seenPairs],
+      paresIaSim,
+      paresIaSimAceitos,
+      paresAceitos: pairsAccepted,
+      paresAceitosModificados: pairsAccepted_modificados,
+      historicoPorRodada: finished
+      ? historicoPorRodada
+      : [...historicoPorRodada, {
+      rodada: round,
+      E_inicio: rodadaEInicio,
+      pares_avaliados: paresAvaliadosRodada,
+      pares_aceitos: paresAceitosRodada,
+    }],   
     },   
   }; 
 }

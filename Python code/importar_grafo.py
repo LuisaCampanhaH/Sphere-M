@@ -81,6 +81,14 @@ def Carregar_De_Json(caminho: str) -> Grafo:
                 if ei_valor == gi_valor:
                     continue
                 grafo.Adicionar_L(gi_valor, ei_valor, no_meio.valor)
+
+    grafo.pares_avaliados = set(
+    tuple(p.split("|||")) for p in payload.get("paresAvaliados", [])
+)
+    grafo.pares_ia_sim = payload.get("paresIaSim", 0)
+    grafo.pares_ia_sim_aceitos = payload.get("paresIaSimAceitos", 0)
+    grafo.pares_aceitos_modificados = payload.get("paresAceitosModificados", 0)
+    grafo.historico_por_rodada = payload.get("historicoPorRodada", [])
                 
     grafo.iteracao_atual = payload.get("round", 1)
     grafo.Registrar_Raio_Se_Necessario()

@@ -174,7 +174,8 @@ canvas {
 }
 
 /* Botão: mostrar/ocultar rótulos das relações (FOA) */
-#toggle-edge-labels-btn {
+#toggle-edge-labels-btn,
+#reset-view-btn {
   position: absolute;
   top: 14px;
   right: 14px;
@@ -193,7 +194,13 @@ canvas {
   box-shadow: var(--shadow-sm);
   transition: all 0.15s ease;
 }
-#toggle-edge-labels-btn:hover {
+#reset-view-btn {
+  right: auto;
+  left: 14px;
+  font-size: 17px;
+}
+#toggle-edge-labels-btn:hover,
+#reset-view-btn:hover {
   background: var(--surface3);
   border-color: var(--border2);
   transform: scale(1.06);

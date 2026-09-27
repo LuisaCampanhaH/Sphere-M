@@ -20,10 +20,13 @@
     <div id="canvas-side">
       <div id="canvas-wrap">
         <canvas id="graph-canvas"></canvas>
+        <button id="reset-view-btn" type="button" title="Resetar zoom/posição do grafo">
+          <span>⟲</span>
+        </button>
         <button id="toggle-edge-labels-btn" type="button" title="Mostrar/ocultar rótulos das relações (ou clique direito no grafo)" aria-pressed="true">
           <span id="toggle-edge-labels-icon">🏷️</span>
         </button>
-        <div id="canvas-overlay-hint">drag · duplo clique no nó pra editar · clique na aresta pro tipo AOF · clique direito: mostrar/ocultar rótulos · delete</div>
+        <div id="canvas-overlay-hint">drag · duplo clique no nó pra editar · clique na aresta pro tipo AOF · scroll: zoom · botão do meio/espaço+arraste: mover · delete</div>
         <div id="dropzone-overlay">
           <div id="dropzone-inner">
             <span id="dropzone-icon">⇩</span>

@@ -77,11 +77,38 @@ window.addEventListener('load', () => {
   }
 });
 
-let nodes = [], edges = [], selected = null, dragging = null; 
-let showEdgeLabels = localStorage.getItem('sphere-show-edge-labels') !== '0';  
-let dragOff = { x: 0, y: 0 }, nextId = 0, animFrame = null; 
-let ctrlSelectedNodes = []; 
-let E = new Set(); 
+let nodes = [], edges = [], selected = null, dragging = null;
+let showEdgeLabels = localStorage.getItem('sphere-show-edge-labels') !== '0';
+let dragOff = { x: 0, y: 0 }, nextId = 0, animFrame = null;
+let ctrlSelectedNodes = [];
+
+// Câmera do canvas (zoom/pan). node.x/node.y continuam em coordenadas de
+// mundo — a física em simulateStep() nunca precisa saber que a câmera existe.
+// camX/camY deslocam a origem, camScale escala tudo; draw() aplica os dois
+// via ctx.translate/ctx.scale, e screenToWorld/worldToScreen convertem entre
+// pixel do canvas e coordenada de mundo nos dois sentidos.
+let camX = 0, camY = 0, camScale = 1;
+
+function screenToWorld(x, y) {
+  return { x: (x - camX) / camScale, y: (y - camY) / camScale };
+}
+
+function worldToScreen(x, y) {
+  return { x: x * camScale + camX, y: y * camScale + camY };
+}
+
+// Estado do pan (arrastar com o botão do meio, ou espaço + botão esquerdo).
+let isPanning = false;
+let panStart = { x: 0, y: 0 };
+let camStart = { x: 0, y: 0 };
+let spacePressed = false;
+
+function clientDeltaToCanvasDelta(dxClient, dyClient) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: dxClient * (W / rect.width), y: dyClient * (H / rect.height) };
+}
+
+let E = new Set();
 let G = new Set(); 
 let tempG = new Set(); 
 let GE = []; 
@@ -479,6 +506,12 @@ function draw() {
     for (let y = 30; y < H; y += 30) {
       ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
     }
+  // Câmera: tudo dentro deste save()/restore() é desenhado em coordenadas
+  // de mundo (node.x/node.y) — a grade de pontos acima e a mensagem de
+  // "sem nós" abaixo ficam de fora de propósito, fixas na tela.
+  ctx.save();
+  ctx.translate(camX, camY);
+  ctx.scale(camScale, camScale);
   const LABEL_FONT = '500 12px "Geist Mono", ui-monospace, monospace';
   ctx.font = LABEL_FONT;
   const NODE_R     = 5;
@@ -654,17 +687,18 @@ function draw() {
       ctx.fillStyle = c.stroke;       
       const simbolo = SIMBOLOS_NATUREZA[nd.tagNatureza] || '';       
       ctx.fillText(simbolo, nx + nw - 10, ny + 10);       
-      ctx.restore();     
-    }   
-  });   
-  if (!nodes.length) {     
-    ctx.save();     
-    ctx.font = '14px sans-serif';     
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim() || 'rgba(0,0,0,0.18)';     
-    ctx.textAlign = 'center';     
-    ctx.textBaseline = 'middle';     
-    ctx.fillText('Preencha os grupos acima para começar', W / 2, H / 2);     
-    ctx.restore(); 
+      ctx.restore();
+    }
+  });
+  ctx.restore(); // fecha o save() da câmera — daqui pra baixo é tela, não mundo
+  if (!nodes.length) {
+    ctx.save();
+    ctx.font = '14px sans-serif';
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim() || 'rgba(0,0,0,0.18)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Preencha os grupos acima para começar', W / 2, H / 2);
+    ctx.restore();
   }
 }
 
@@ -1246,11 +1280,18 @@ document.getElementById('reset-btn2').addEventListener('click', resetAll);
     applyState();     
     draw();   
   }
-  applyState();   
-  btn?.addEventListener('click', toggleEdgeLabels); 
-})(); 
+  applyState();
+  btn?.addEventListener('click', toggleEdgeLabels);
+})();
 
-function buildSessionExport() {   
+document.getElementById('reset-view-btn')?.addEventListener('click', () => {
+  camX = 0;
+  camY = 0;
+  camScale = 1;
+  draw();
+});
+
+function buildSessionExport() {
   return {     
     sphereM: {       
       version: 1,       
@@ -1545,18 +1586,68 @@ function nodeAt(x, y) {
   }); 
 }
 
-function getPos(e) {   
-  const rect = canvas.getBoundingClientRect();   
-  return {     
-    x: (e.clientX - rect.left) * (W / rect.width),     
-    y: (e.clientY - rect.top) * (H / rect.height),   
-  }; 
+function clientToCanvas(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) * (W / rect.width),
+    y: (e.clientY - rect.top) * (H / rect.height),
+  };
 }
 
-canvas.addEventListener('mousedown', e => {   
-  const p = getPos(e), node = nodeAt(p.x, p.y);   
-  selected = node || null;   
-  if (node) {     
+function getPos(e) {
+  const { x, y } = clientToCanvas(e);
+  return screenToWorld(x, y);
+}
+
+// Zoom com o scroll do mouse, ancorado no cursor: o ponto de mundo sob o
+// cursor fica parado na tela, o resto escala ao redor dele.
+const ZOOM_MIN = 0.2, ZOOM_MAX = 3;
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const { x: canvasX, y: canvasY } = clientToCanvas(e);
+  const worldSobCursor = screenToWorld(canvasX, canvasY);
+  const fator = Math.exp(-e.deltaY * 0.001);
+  camScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, camScale * fator));
+  camX = canvasX - worldSobCursor.x * camScale;
+  camY = canvasY - worldSobCursor.y * camScale;
+  draw();
+}, { passive: false });
+
+// Espaço + arrastar também faz pan (além do botão do meio) — cobre quem
+// não tem botão do meio disponível (ex: trackpad). Não ativa se o foco
+// estiver num campo de texto, pra não atrapalhar quem está digitando.
+document.addEventListener('keydown', e => {
+  if (e.code !== 'Space' || spacePressed) return;
+  const tag = document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  spacePressed = true;
+  e.preventDefault();
+  if (!isPanning) canvas.style.cursor = 'grab';
+});
+
+document.addEventListener('keyup', e => {
+  if (e.code !== 'Space') return;
+  spacePressed = false;
+  if (!isPanning) canvas.style.cursor = 'default';
+});
+
+function startPan(e) {
+  isPanning = true;
+  panStart = { x: e.clientX, y: e.clientY };
+  camStart = { x: camX, y: camY };
+  canvas.style.cursor = 'grabbing';
+}
+
+canvas.addEventListener('mousedown', e => {
+  if (e.button === 1 || (e.button === 0 && spacePressed)) {
+    e.preventDefault();
+    startPan(e);
+    return;
+  }
+  const p = getPos(e), node = nodeAt(p.x, p.y);
+  selected = node || null;
+  if (node) {
     if (e.ctrlKey || e.metaKey) {       
       // Se clicou no nó segurando Ctrl
       const idx = ctrlSelectedNodes.indexOf(node);       
@@ -1602,29 +1693,47 @@ canvas.addEventListener('mousedown', e => {
   draw(); 
 });
 
-canvas.addEventListener('mousemove', e => {   
-  const p = getPos(e);   
-  if (dragging) {     
-    dragging.x = Math.max(dragging.w / 2 + 4, Math.min(W - dragging.w / 2 - 4, p.x - dragOff.x));     
-    dragging.y = Math.max(dragging.h / 2 + 4, Math.min(H - dragging.h / 2 - 4, p.y - dragOff.y));   
-  } else {     
-    const hoveredNode = nodeAt(p.x, p.y);     
-    if (hoveredNode) canvas.style.cursor = 'grab';     
-    else canvas.style.cursor = edgeAt(p.x, p.y) ? 'pointer' : 'default'; 
+canvas.addEventListener('mousemove', e => {
+  if (isPanning) {
+    const delta = clientDeltaToCanvasDelta(e.clientX - panStart.x, e.clientY - panStart.y);
+    camX = camStart.x + delta.x;
+    camY = camStart.y + delta.y;
+    draw();
+    return;
+  }
+  const p = getPos(e);
+  if (dragging) {
+    dragging.x = Math.max(dragging.w / 2 + 4, Math.min(W - dragging.w / 2 - 4, p.x - dragOff.x));
+    dragging.y = Math.max(dragging.h / 2 + 4, Math.min(H - dragging.h / 2 - 4, p.y - dragOff.y));
+  } else {
+    const hoveredNode = nodeAt(p.x, p.y);
+    if (hoveredNode) canvas.style.cursor = 'grab';
+    else canvas.style.cursor = edgeAt(p.x, p.y) ? 'pointer' : (spacePressed ? 'grab' : 'default');
   }
 });
 
-canvas.addEventListener('mouseup', () => {   
-  if (dragging) {     
-    dragging.vx = 0; dragging.vy = 0;     
-    dragging.fixed = true;   
+canvas.addEventListener('mouseup', () => {
+  if (isPanning) {
+    isPanning = false;
+    canvas.style.cursor = spacePressed ? 'grab' : 'default';
+    return;
   }
-  dragging = null;   
-  canvas.style.cursor = 'default';   
-  startSim(); 
+  if (dragging) {
+    dragging.vx = 0; dragging.vy = 0;
+    dragging.fixed = true;
+  }
+  dragging = null;
+  canvas.style.cursor = 'default';
+  startSim();
 });
 
-canvas.addEventListener('mouseleave', () => { dragging = null; });  
+canvas.addEventListener('mouseleave', () => {
+  dragging = null;
+  if (isPanning) {
+    isPanning = false;
+    canvas.style.cursor = spacePressed ? 'grab' : 'default';
+  }
+});
 
 // Edição inline de nós (duplo clique)
 let editingNode = null; 
@@ -1725,10 +1834,11 @@ function startEdgeEdit(edge, pos) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = rect.width / W;
   const scaleY = rect.height / H;
+  const posTela = worldToScreen(pos.x, pos.y);
   const a = getNodeById(edge.from), b = getNodeById(edge.to);
   edgeTagPanel = criarPainelFlutuante(
-    rect.left + pos.x * scaleX - 90,
-    rect.top  + pos.y * scaleY - 10,
+    rect.left + posTela.x * scaleX - 90,
+    rect.top  + posTela.y * scaleY - 10,
     190
   );
   const titleEl = document.createElement('div');
@@ -1821,17 +1931,18 @@ function startNodeEdit(node) {
   if (editingNode) commitNodeEdit();   
   if (editingEdge) cancelEdgeEdit();   
   editingNode = node;   
-  const rect = canvas.getBoundingClientRect();   
-  const scaleX = rect.width / W;   
-  const scaleY = rect.height / H;   
-  nodeEditInput = document.createElement('input');   
-  nodeEditInput.type = 'text';   
-  nodeEditInput.value = node.label;   
-  nodeEditInput.style.position = 'fixed';   
-  nodeEditInput.style.left = (rect.left + (node.x - node.w / 2) * scaleX) + 'px';   
-  nodeEditInput.style.top  = (rect.top  + (node.y - node.h / 2) * scaleY) + 'px';   
-  nodeEditInput.style.width = (node.w * scaleX) + 'px';   
-  nodeEditInput.style.height = '26px';   
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = rect.width / W;
+  const scaleY = rect.height / H;
+  const topLeft = worldToScreen(node.x - node.w / 2, node.y - node.h / 2);
+  nodeEditInput = document.createElement('input');
+  nodeEditInput.type = 'text';
+  nodeEditInput.value = node.label;
+  nodeEditInput.style.position = 'fixed';
+  nodeEditInput.style.left = (rect.left + topLeft.x * scaleX) + 'px';
+  nodeEditInput.style.top  = (rect.top  + topLeft.y * scaleY) + 'px';
+  nodeEditInput.style.width = (node.w * camScale * scaleX) + 'px';
+  nodeEditInput.style.height = (26 * camScale) + 'px';
   nodeEditInput.style.font = '500 12px "Geist Mono", ui-monospace, monospace';   
   nodeEditInput.style.textAlign = 'center';   
   nodeEditInput.style.border = '2px solid ' + (GROUP_COLORS[node.group]?.stroke || '#888');   
@@ -1846,9 +1957,9 @@ function startNodeEdit(node) {
   document.body.appendChild(nodeEditInput);   
   nodeEditInput.select();   
   nodeTagPanel = criarPainelFlutuante(
-    rect.left + (node.x - node.w / 2) * scaleX,
-    rect.top  + (node.y - node.h / 2) * scaleY + 30,
-    Math.max(node.w * scaleX, 170)
+    rect.left + topLeft.x * scaleX,
+    rect.top  + topLeft.y * scaleY + 30,
+    Math.max(node.w * camScale * scaleX, 170)
   );
   const selectsRow = document.createElement('div');
   selectsRow.style.display = 'flex';   

@@ -1210,8 +1210,9 @@ document.getElementById('reset-btn2').addEventListener('click', resetAll);
   const sections = [     
     { id: 'legend', toggleId: 'legend-toggle', storageKey: 'sphere-legend-collapsed' },     
     { id: 'tag-audit', toggleId: 'tag-audit-toggle', storageKey: 'sphere-tag-audit-collapsed' },     
-    { id: 'export-section', toggleId: 'export-toggle', storageKey: 'sphere-export-collapsed' },   
-  ];   
+    { id: 'export-section', toggleId: 'export-toggle', storageKey: 'sphere-export-collapsed' },
+    { id: 'metrics-section', toggleId: 'metrics-toggle', storageKey: 'sphere-metrics-collapsed' },
+  ];
   sections.forEach(({ id, toggleId, storageKey }) => {     
     const section = document.getElementById(id);     
     const toggleBtn = document.getElementById(toggleId);     
@@ -1364,12 +1365,20 @@ el.metricsBtn.addEventListener('click', calcularMetricas);
 
 // ── Importação de sessão (JSON) — drag-and-drop no canvas ou botão ──
 
-function resetImportState() {   
-  nodes = []; edges = []; selected = null; dragging = null; nextId = 0;   
-  ctrlSelectedNodes = [];   
-  E = new Set(); G = new Set(); tempG = new Set(); GE = []; seenPairs = new Set();   
-  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }   
-  sessionId++; 
+function resetImportState() {
+  nodes = []; edges = []; selected = null; dragging = null; nextId = 0;
+  ctrlSelectedNodes = [];
+  E = new Set(); G = new Set(); tempG = new Set(); GE = []; seenPairs = new Set();
+  // Zera os contadores de IA/HITL usados pelas métricas — sem isso, uma
+  // sessão importada herdaria valores de qualquer sessão anterior aberta
+  // nesta aba, em vez de refletir só o que está no arquivo importado.
+  pairsAccepted = 0;
+  pairsAccepted_modificados = 0;
+  paresIaSim = 0;
+  paresIaSimAceitos = 0;
+  historicoPorRodada = [];
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+  sessionId++;
 }
 
 function importSessionFromObject(raw) {   
@@ -1417,15 +1426,28 @@ function importSessionFromObject(raw) {
   // do meio (teto -> meio -> piso), pra não repetir esses pares se a rodada continuar.
   // Obs.: pares que foram "pulados" sem gerar conexão não ficam no .json, então
   // não tem como recuperar esse histórico — só o que virou aresta.   
-  nodes.filter(nd => nd.group === 'meio').forEach(meio => {     
+  nodes.filter(nd => nd.group === 'meio').forEach(meio => {
     const gis = edges.filter(e => e.to === meio.id).map(e => getNodeById(e.from)?.label).filter(Boolean);
     const eis = edges.filter(e => e.from === meio.id).map(e => getNodeById(e.to)?.label).filter(Boolean);
-    gis.forEach(gi => eis.forEach(ei => {       
-      if (gi === ei) return;       
-      seenPairs.add([gi, ei].sort().join('|||'));     
-    }));   
-  });   
-  
+    gis.forEach(gi => eis.forEach(ei => {
+      if (gi === ei) return;
+      seenPairs.add([gi, ei].sort().join('|||'));
+    }));
+  });
+
+  // Restaura do próprio arquivo os pares avaliados de verdade (inclui pares
+  // pulados/rejeitados, que a heurística acima não enxerga) e os contadores
+  // de IA/HITL — sem isso, as métricas calculadas depois do import misturam
+  // dados reais do arquivo com o que sobrou de uma sessão anterior no navegador.
+  if (Array.isArray(data.paresAvaliados)) {
+    data.paresAvaliados.forEach(p => seenPairs.add(p));
+  }
+  pairsAccepted = Number(data.paresAceitos) || 0;
+  pairsAccepted_modificados = Number(data.paresAceitosModificados) || 0;
+  paresIaSim = Number(data.paresIaSim) || 0;
+  paresIaSimAceitos = Number(data.paresIaSimAceitos) || 0;
+  historicoPorRodada = Array.isArray(data.historicoPorRodada) ? data.historicoPorRodada : [];
+
   round = Number(data.round) > 0 ? Number(data.round) : 1;   
   finished = !!data.finished;   
   
@@ -1449,11 +1471,12 @@ function importSessionFromObject(raw) {
     el.completeMsg.style.display = 'none';     
     el.alreadyConnectedMsg.style.display = 'none';     
     el.finishedMsg.style.display = 'flex';   
-  } else {     
-    el.finishedMsg.style.display = 'none';     
-    GE = buildGE();     
-    pairIdx = 0;     
-    updatePairUI();   
+  } else {
+    el.finishedMsg.style.display = 'none';
+    GE = buildGE();
+    pairIdx = 0;
+    _iniciarRodadaStats();
+    updatePairUI();
   }
   
   renderAuditPanel();   

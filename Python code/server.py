@@ -13,6 +13,7 @@ Uso:
     python server.py
 Depois acesse http://localhost:5001/ping para confirmar que está no ar.
 """
+import re
 from dataclasses import asdict
 
 from flask import Flask, jsonify, request
@@ -22,14 +23,19 @@ from metricas import calcular_metricas
 
 app = Flask(__name__)
 
-# Origem do WebFront (servido por "python -m http.server 8000").
+# O WebFront pode ser servido por qualquer ferramenta local — "python -m
+# http.server" (porta 8000), o Live Server do VS Code (porta 5500), etc.
+# Em vez de fixar uma porta só, aceitamos qualquer origem que seja a
+# própria máquina do desenvolvedor (localhost/127.0.0.1, qualquer porta).
 # Sem isso, o navegador bloqueia o fetch() do script.js por CORS.
-ORIGEM_PERMITIDA = "http://localhost:8000"
+ORIGEM_LOCAL = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
 
 
 @app.after_request
 def adicionar_cabecalhos_cors(response):
-    response.headers["Access-Control-Allow-Origin"] = ORIGEM_PERMITIDA
+    origem = request.headers.get("Origin")
+    if origem and ORIGEM_LOCAL.match(origem):
+        response.headers["Access-Control-Allow-Origin"] = origem
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response

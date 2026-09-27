@@ -28,7 +28,16 @@ def Carregar_De_Json(caminho: str) -> Grafo:
     """
     with open(caminho, encoding="utf-8") as f:
         bruto = json.load(f)
-        
+
+    return Carregar_De_Payload(bruto)
+
+
+def Carregar_De_Payload(bruto: dict) -> Grafo:
+    """
+    Mesma reconstrução de Carregar_De_Json, mas a partir de um dict já
+    carregado em memória (ex.: o corpo de uma requisição HTTP), sem
+    depender de um arquivo no disco.
+    """
     payload = bruto.get("sphereM", bruto)
     grafo = Grafo()
     id_para_no: dict[int, No_Grafo] = {}

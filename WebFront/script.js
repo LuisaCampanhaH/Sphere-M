@@ -27,6 +27,8 @@ const el = {
   progressBar: document.getElementById('progress-bar'),
   pairCounter: document.getElementById('pair-counter'),
   importJsonInput: document.getElementById('import-json-input'),
+  metricsBtn: document.getElementById('metrics-btn'),
+  metricsPanel: document.getElementById('metrics-panel'),
 };
 
 window.addEventListener('resize', () => {   
@@ -1298,7 +1300,67 @@ function exportSessionJSON() {
   URL.revokeObjectURL(url); 
 }
 
-document.getElementById('export-json-btn').addEventListener('click', exportSessionJSON);  
+document.getElementById('export-json-btn').addEventListener('click', exportSessionJSON);
+
+// ── Métricas — chama o servidor Python local (server.py), sem recalcular nada aqui ──
+
+const METRICS_API_URL = 'http://localhost:5001/metricas';
+
+function formatarMetrica(v) {
+  return (v === null || v === undefined) ? 'n/a' : v;
+}
+
+function renderMetricsPanel(m) {
+  const linhas = [
+    ['Estado da esfera', m.esfera_fechada ? 'FECHADA' : 'aberta'],
+    ['Nós na esfera', m.total_elementos],
+    ['Iterações', m.num_iteracoes],
+    ['Raio', formatarMetrica(m.raio)],
+    ['Densidade', m.densidade],
+    ['Produtividade', formatarMetrica(m.produtividade)],
+    ['Cobertura global', m.cobertura_global],
+    ['α_IA', formatarMetrica(m.alpha_ia)],
+    ['α_domínio', formatarMetrica(m.alpha_dominio)],
+    ['τ_HITL', formatarMetrica(m.tau_hitl)],
+    ['τ_IA', formatarMetrica(m.tau_ia)],
+    ['Delta', formatarMetrica(m.delta)],
+  ];
+  el.metricsPanel.innerHTML = linhas
+    .map(([label, valor]) => `<div class="audit-row"><span>${label}</span><b>${valor}</b></div>`)
+    .join('');
+}
+
+function renderMetricsError(mensagem) {
+  el.metricsPanel.innerHTML = `<div class="metrics-error">${mensagem}</div>`;
+}
+
+async function calcularMetricas() {
+  el.metricsBtn.disabled = true;
+  el.metricsPanel.innerHTML = `<div class="audit-empty">calculando…</div>`;
+  const payload = buildSessionExport();
+  try {
+    const resp = await fetch(METRICS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      renderMetricsError(data.erro || 'Erro ao calcular as métricas.');
+      return;
+    }
+    renderMetricsPanel(data);
+  } catch (err) {
+    renderMetricsError(
+      'Não consegui falar com o servidor de métricas — ele está rodando? ' +
+      '(<code>python "Python code/server.py"</code>, porta 5001)'
+    );
+  } finally {
+    el.metricsBtn.disabled = false;
+  }
+}
+
+el.metricsBtn.addEventListener('click', calcularMetricas);
 
 // ── Importação de sessão (JSON) — drag-and-drop no canvas ou botão ──
 

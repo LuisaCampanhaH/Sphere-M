@@ -253,6 +253,9 @@
           <button id="import-json-btn" class="btn-ghost" style="width:100%">⇧ Importar sessão (JSON)</button>
           <input type="file" id="import-json-input" accept="application/json,.json" hidden />
           <p id="import-hint">carrega um .json exportado daqui (ou gerado pelo mesmo formato) de volta pro canvas — também dá pra arrastar o arquivo direto pro grafo.</p>
+          <button id="metrics-btn" class="btn-ghost" style="width:100%">📊 Calcular métricas</button>
+          <p id="metrics-hint">chama um servidor Python local (<code>python "Python code/server.py"</code>, porta 5001) que roda <code>metricas.py</code> de verdade — nada é recalculado aqui no JS.</p>
+          <div id="metrics-panel"></div>
         </div>
       </div>
 

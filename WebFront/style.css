@@ -956,6 +956,46 @@ button:active { transform: scale(0.98); }
   transition: color 0.3s;
 }
 
+#metrics-btn {
+  margin-top: 10px;
+}
+
+#metrics-hint {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+  margin-top: 8px;
+  transition: color 0.3s;
+}
+
+#metrics-hint code {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: var(--text);
+}
+
+#metrics-panel {
+  margin-top: 8px;
+}
+
+#metrics-panel .audit-row {
+  justify-content: space-between;
+}
+
+.metrics-error {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: #c1121f;
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+}
+
 /* Bloco da IA */
  
 #ai-block {

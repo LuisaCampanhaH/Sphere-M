@@ -994,21 +994,25 @@ async function updatePairUI() {
   const currentSession = sessionId;   
   const aiText = await callAI(labelA, labelB);   
   if (finished || sessionId !== currentSession) return;   
-  if (aiText === null) {     
-    showAIError();     
-    el.skipBtn.disabled = false;     
-    return;   
+  if (aiText === null) {
+    showAIError();
+    el.inputMeio.disabled = false;
+    el.confirmBtn.disabled = false;
+    el.skipBtn.disabled = false;
+    return;
   }
-  try {     
-    showAIResult(parseAIResponse(aiText));   
-  } catch (err) {     
-    showAIError();     
-    el.skipBtn.disabled = false;     
-    return;   
+  try {
+    showAIResult(parseAIResponse(aiText));
+  } catch (err) {
+    showAIError();
+    el.inputMeio.disabled = false;
+    el.confirmBtn.disabled = false;
+    el.skipBtn.disabled = false;
+    return;
   }
-  el.inputMeio.disabled = false;   
-  el.confirmBtn.disabled = false;   
-  el.inputMeio.focus(); 
+  el.inputMeio.disabled = false;
+  el.confirmBtn.disabled = false;
+  el.inputMeio.focus();
 }
 
 // Fluxo Teto -> Meio -> Piso
@@ -1143,18 +1147,22 @@ document.getElementById('ai-retry-btn').addEventListener('click', async () => {
   showAILoading();   
   el.inputMeio.disabled = true;   
   el.confirmBtn.disabled = true;   
-  const aiText = await callAI(labelA, labelB);   
-  if (aiText === null) {     
-    showAIError();     
-    return;   
+  const aiText = await callAI(labelA, labelB);
+  if (aiText === null) {
+    showAIError();
+    el.inputMeio.disabled = false;
+    el.confirmBtn.disabled = false;
+    return;
   }
-  try {     
-    showAIResult(parseAIResponse(aiText));     
-    el.inputMeio.disabled = false;     
-    el.confirmBtn.disabled = false;     
-    el.inputMeio.focus();   
-  } catch (err) {     
-    showAIError(); 
+  try {
+    showAIResult(parseAIResponse(aiText));
+    el.inputMeio.disabled = false;
+    el.confirmBtn.disabled = false;
+    el.inputMeio.focus();
+  } catch (err) {
+    showAIError();
+    el.inputMeio.disabled = false;
+    el.confirmBtn.disabled = false;
   }
 });
 

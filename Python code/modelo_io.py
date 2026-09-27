@@ -55,6 +55,10 @@ def exportar_modelo(grafo, caminho: str) -> None:
         "pares_avaliados": [list(p) for p in getattr(grafo, "pares_avaliados", set())],
         "iteracao_atual": grafo.iteracao_atual,
         "raio": grafo.raio,
+        "pares_ia_sim": getattr(grafo, "pares_ia_sim", 0),
+        "pares_ia_sim_aceitos": getattr(grafo, "pares_ia_sim_aceitos", 0),
+        "pares_aceitos_modificados": getattr(grafo, "pares_aceitos_modificados", 0),
+        "historico_por_rodada": getattr(grafo, "historico_por_rodada", []),
     }
 
     with open(caminho, "w", encoding="utf-8") as f:
@@ -101,6 +105,10 @@ def importar_modelo(caminho: str):
     grafo.pares_avaliados = {tuple(p) for p in payload.get("pares_avaliados", [])}
     grafo.iteracao_atual = payload.get("iteracao_atual", 0)
     grafo.raio = payload.get("raio")
+    grafo.pares_ia_sim = payload.get("pares_ia_sim", 0)
+    grafo.pares_ia_sim_aceitos = payload.get("pares_ia_sim_aceitos", 0)
+    grafo.pares_aceitos_modificados = payload.get("pares_aceitos_modificados", 0)
+    grafo.historico_por_rodada = payload.get("historico_por_rodada", [])
 
     grafo._Propagar_Marcas()
     grafo.Registrar_Raio_Se_Necessario()

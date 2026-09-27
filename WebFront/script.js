@@ -1,10 +1,33 @@
-const canvas = document.getElementById('graph-canvas'); 
-const ctx = canvas.getContext('2d'); 
-let W = canvas.parentElement.clientWidth || 800; 
-let H = canvas.parentElement.clientHeight || 600; 
-canvas.width = W; 
-canvas.height = H; 
-let sessionId = 0; 
+const canvas = document.getElementById('graph-canvas');
+const ctx = canvas.getContext('2d');
+let W = canvas.parentElement.clientWidth || 800;
+let H = canvas.parentElement.clientHeight || 600;
+canvas.width = W;
+canvas.height = H;
+let sessionId = 0;
+
+// Elementos do DOM consultados com frequência — resolvidos uma única vez
+// (o <script> já roda no fim do <body>, então todos já existem no DOM).
+const el = {
+  inputMeio: document.getElementById('input-meio'),
+  confirmBtn: document.getElementById('confirm-btn'),
+  skipBtn: document.getElementById('skip-btn'),
+  doneMsg: document.getElementById('done-msg'),
+  completeMsg: document.getElementById('complete-msg'),
+  stopBtn: document.getElementById('stop-btn'),
+  pairPrompt: document.getElementById('pair-prompt'),
+  finishedMsg: document.getElementById('finished-msg'),
+  alreadyConnectedMsg: document.getElementById('already-connected-msg'),
+  aiHint: document.getElementById('ai-hint'),
+  phase1Panel: document.getElementById('phase1-panel'),
+  phase2Panel: document.getElementById('phase2-panel'),
+  inputTeto: document.getElementById('input-teto'),
+  inputRel: document.getElementById('input-rel'),
+  inputPiso: document.getElementById('input-piso'),
+  progressBar: document.getElementById('progress-bar'),
+  pairCounter: document.getElementById('pair-counter'),
+  importJsonInput: document.getElementById('import-json-input'),
+};
 
 window.addEventListener('resize', () => {   
   const oldW = W, oldH = H;   
@@ -96,8 +119,12 @@ const GROUP_COLORS = {
   meio: { fill: '#f3eafd', stroke: '#7c22d4', text: '#4a0e87' }
 };
 
-function findNode(label) {   
-  return nodes.find(n => n.label.toLowerCase() === label.toLowerCase().trim()); 
+function findNode(label) {
+  return nodes.find(n => n.label.toLowerCase() === label.toLowerCase().trim());
+}
+
+function getNodeById(id) {
+  return nodes.find(n => n.id === id);
 }
 
 function createNode(label, group, x, y) {   
@@ -130,16 +157,16 @@ function tipoRelacaoPorNatureza(nodeA, nodeB) {
 function reavaliarTiposDeArestas() {   
   edges.forEach(e => {     
     if (e.tipoManual) return;     
-    const a = nodes.find(n => n.id === e.from);     
-    const b = nodes.find(n => n.id === e.to);     
-    const forcado = tipoRelacaoPorNatureza(a, b);     
+    const a = getNodeById(e.from);
+    const b = getNodeById(e.to);
+    const forcado = tipoRelacaoPorNatureza(a, b);
     if (forcado) e.tipo = forcado;   
   }); 
 }
 
 function getOrCreateEdge(idA, idB, tipoSugerido) {   
-  const nodeA = nodes.find(n => n.id === idA);   
-  const nodeB = nodes.find(n => n.id === idB);   
+  const nodeA = getNodeById(idA);
+  const nodeB = getNodeById(idB);
   const tipoForcado = tipoRelacaoPorNatureza(nodeA, nodeB);   
   const tipo = tipoForcado || tipoSugerido || null;   
   const exists = edges.find(e => e.from === idA && e.to === idB);   
@@ -174,7 +201,7 @@ function propagateMarks() {
       if (!cVisited.has(nb)) {         
         cVisited.add(nb);         
         cQueue.push(nb);         
-        const nd = nodes.find(n => n.id === nb);         
+        const nd = getNodeById(nb);
         if (nd) nd.linkedToCeiling = true;       
       }     
     }   
@@ -188,7 +215,7 @@ function propagateMarks() {
       if (!fVisited.has(nb)) {         
         fVisited.add(nb);         
         fQueue.push(nb);         
-        const nd = nodes.find(n => n.id === nb);         
+        const nd = getNodeById(nb);
         if (nd) nd.linkedToFloor = true;       
       }     
     } 
@@ -358,12 +385,12 @@ function simulateStep() {
       a.fx -= fx; a.fy -= fy; b.fx += fx; b.fy += fy;     
     }   
   }
-  edges.forEach(e => {     
-    const a = nodes.find(n => n.id === e.from), b = nodes.find(n => n.id === e.to);     
-    if (!a || !b) return;     
-    const dx = b.x - a.x, dy = b.y - a.y;     
-    const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;     
-    const force = SPRING_K * (dist - SPRING_LEN);     
+  edges.forEach(e => {
+    const a = getNodeById(e.from), b = getNodeById(e.to);
+    if (!a || !b) return;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
+    const force = SPRING_K * (dist - SPRING_LEN);
     const fx = (dx / dist) * force, fy = (dy / dist) * force;     
     a.fx += fx; a.fy += fy; b.fx -= fx; b.fy -= fy;   
   });   
@@ -414,55 +441,64 @@ function startSim(steps = 300) {
   animFrame = requestAnimationFrame(loop); 
 }
 
-function draw() {   
-  clampNodesToCanvas();   
-  propagatePathTag();   
-  ctx.clearRect(0, 0, W, H);   
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--canvas-dot').trim() || 'rgba(0,0,0,0.06)';   
-  for (let x = 30; x < W; x += 30)     
-    for (let y = 30; y < H; y += 30) {       
-      ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();     
-    }   
-  const LABEL_FONT = '500 12px "Geist Mono", ui-monospace, monospace';   
-  ctx.font = LABEL_FONT;   
-  const NODE_R     = 5;   
-  const ACCENT_H   = 3;   
-  const LABEL_ZONE = 30;   
-  const BADGE_ZONE = 20;   
-  const BADGE_W    = 22;   
-  const BADGE_H    = 13;   
-  const BADGE_R    = 3;   
-  nodes.forEach(nd => {     
-    const textW = ctx.measureText(nd.label).width;     
-    nd.w = Math.max(textW + 28, 64);     
-    nd.hasBadges = nd.linkedToCeiling || nd.linkedToFloor;     
-    nd.h = LABEL_ZONE + (nd.hasBadges ? BADGE_ZONE : 0);   
-  });   
-  function roundRect(rx, ry, rw, rh, radii) {     
-    ctx.beginPath();     
-    if (ctx.roundRect) {       
-      ctx.roundRect(rx, ry, rw, rh, radii);     
-    } else {       
-      const r = Array.isArray(radii) ? radii : [radii, radii, radii, radii];       
-      ctx.moveTo(rx + r[0], ry);       
-      ctx.lineTo(rx + rw - r[1], ry);       
-      ctx.quadraticCurveTo(rx + rw, ry,      rx + rw,      ry + r[1]);       
-      ctx.lineTo(rx + rw,      ry + rh - r[2]);       
-      ctx.quadraticCurveTo(rx + rw, ry + rh, rx + rw - r[2], ry + rh);       
-      ctx.lineTo(rx + r[3],      ry + rh);       
-      ctx.quadraticCurveTo(rx,      ry + rh, rx,            ry + rh - r[3]);       
-      ctx.lineTo(rx,            ry + r[0]);       
-      ctx.quadraticCurveTo(rx,      ry,      rx + r[0],     ry);     
-    }     
-    ctx.closePath();   
+// Fora de draw() porque draw() roda a cada frame de animação — não usa
+// nada do escopo de draw(), então não precisa ser recriada a cada chamada.
+function roundRect(rx, ry, rw, rh, radii) {
+  ctx.beginPath();
+  if (ctx.roundRect) {
+    ctx.roundRect(rx, ry, rw, rh, radii);
+  } else {
+    const r = Array.isArray(radii) ? radii : [radii, radii, radii, radii];
+    ctx.moveTo(rx + r[0], ry);
+    ctx.lineTo(rx + rw - r[1], ry);
+    ctx.quadraticCurveTo(rx + rw, ry,      rx + rw,      ry + r[1]);
+    ctx.lineTo(rx + rw,      ry + rh - r[2]);
+    ctx.quadraticCurveTo(rx + rw, ry + rh, rx + rw - r[2], ry + rh);
+    ctx.lineTo(rx + r[3],      ry + rh);
+    ctx.quadraticCurveTo(rx,      ry + rh, rx,            ry + rh - r[3]);
+    ctx.lineTo(rx,            ry + r[0]);
+    ctx.quadraticCurveTo(rx,      ry,      rx + r[0],     ry);
   }
-  edges.forEach(e => {     
-    const a = nodes.find(n => n.id === e.from), b = nodes.find(n => n.id === e.to);     
-    if (!a || !b) return;     
-    ctx.save();     
-    const tagA = a.tagCaminho, tagB = b.tagCaminho;     
-    let edgeColor = getComputedStyle(document.documentElement).getPropertyValue('--edge-color-strong').trim() || 'rgba(0,0,0,0.55)';     
-    let edgeWidth = 2.4;     
+  ctx.closePath();
+}
+
+function draw() {
+  clampNodesToCanvas();
+  propagatePathTag();
+  ctx.clearRect(0, 0, W, H);
+  const cssVar = (name, fallback) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  const corPontosFundo  = cssVar('--canvas-dot', 'rgba(0,0,0,0.06)');
+  const corArestaPadrao = cssVar('--edge-color-strong', 'rgba(0,0,0,0.55)');
+  const corRotuloFundo  = cssVar('--surface', '#faf9f6');
+  const corAccent       = cssVar('--accent', '#6d1fc2');
+  ctx.fillStyle = corPontosFundo;
+  for (let x = 30; x < W; x += 30)
+    for (let y = 30; y < H; y += 30) {
+      ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
+    }
+  const LABEL_FONT = '500 12px "Geist Mono", ui-monospace, monospace';
+  ctx.font = LABEL_FONT;
+  const NODE_R     = 5;
+  const ACCENT_H   = 3;
+  const LABEL_ZONE = 30;
+  const BADGE_ZONE = 20;
+  const BADGE_W    = 22;
+  const BADGE_H    = 13;
+  const BADGE_R    = 3;
+  nodes.forEach(nd => {
+    const textW = ctx.measureText(nd.label).width;
+    nd.w = Math.max(textW + 28, 64);
+    nd.hasBadges = nd.linkedToCeiling || nd.linkedToFloor;
+    nd.h = LABEL_ZONE + (nd.hasBadges ? BADGE_ZONE : 0);
+  });
+  edges.forEach(e => {
+    const a = getNodeById(e.from), b = getNodeById(e.to);
+    if (!a || !b) return;
+    ctx.save();
+    const tagA = a.tagCaminho, tagB = b.tagCaminho;
+    let edgeColor = corArestaPadrao;
+    let edgeWidth = 2.4;
     if (tagA && tagB && tagA !== tagB) {       
       edgeColor = COR_CAMINHO.ambos;       
       edgeWidth = 3.2;     
@@ -500,7 +536,7 @@ function draw() {
       const textW = ctx.measureText(e.tipo).width;       
       const padX = 5, padY = 3;       
       roundRect(midX - textW / 2 - padX, midY - 7.5 - padY, textW + padX * 2, 15 + padY * 2, 5);       
-      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#faf9f6';       
+      ctx.fillStyle = corRotuloFundo;
       ctx.globalAlpha = 0.97;       
       ctx.fill();       
       ctx.globalAlpha = 1;       
@@ -538,7 +574,7 @@ function draw() {
     if (ctrlSelectedNodes.includes(nd)) {       
       ctx.save();       
       roundRect(nx - 4, ny - 4, nw + 8, nh + 8, NODE_R + 4);       
-      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#6d1fc2';       
+      ctx.strokeStyle = corAccent;
       ctx.setLineDash([4, 4]);       
       ctx.lineWidth = 1.5;       
       ctx.stroke();       
@@ -635,9 +671,9 @@ function parseList(str) {
 }
 
 document.getElementById('start-btn').addEventListener('click', () => {   
-  const tetos = parseList(document.getElementById('input-teto').value);   
-  const pisos = parseList(document.getElementById('input-piso').value);   
-  const rels = parseList(document.getElementById('input-rel').value);   
+  const tetos = parseList(el.inputTeto.value);   
+  const pisos = parseList(el.inputPiso.value);   
+  const rels = parseList(el.inputRel.value);   
   if (!tetos.length || !pisos.length) {     
     ['input-teto', 'input-piso'].forEach(id => {       
       const el = document.getElementById(id);       
@@ -677,14 +713,14 @@ document.getElementById('start-btn').addEventListener('click', () => {
   GE = buildGE();   
   pairIdx = 0;   
   _iniciarRodadaStats();
-  document.getElementById('phase1-panel').style.display = 'none';   
-  document.getElementById('phase2-panel').style.display = 'block';   
+  el.phase1Panel.style.display = 'none';   
+  el.phase2Panel.style.display = 'block';   
   updatePairUI();   
   startSim(400); 
 });
 
 function pathToString(startId, endId) {   
-  if (startId === endId) return nodes.find(n => n.id === startId)?.label ?? '';   
+  if (startId === endId) return getNodeById(startId)?.label ?? '';
   const visited = new Set([startId]);   
   const queue = [[startId, [startId]]];   
   while (queue.length) {     
@@ -694,7 +730,7 @@ function pathToString(startId, endId) {
       .map(e => e.from === cur ? e.to : e.from);     
     for (const nb of neighbors) {       
       if (nb === endId) {         
-        return [...path, nb].map(id => nodes.find(n => n.id === id)?.label ?? '?').join('   ');       
+        return [...path, nb].map(id => getNodeById(id)?.label ?? '?').join('   ');
       }       
       if (!visited.has(nb)) { visited.add(nb); queue.push([nb, [...path, nb]]); }     
     }   
@@ -706,8 +742,7 @@ let _aiCurrentPair = null;
 let _aiLastMeio = null; 
 let _aiLastTipoAof = null; 
 
-// TIPOS_AOF restaurado com a codificação correta
-const TIPOS_AOF = ['é-um', 'é-parte-de', 'é-composto-por', 'é-uma-variação-de', 'é-um-atributo-de', 'é-um-componente-de', 'é-um-elemento-de', 'é-caracterizado-por']; 
+const TIPOS_AOF = ['é-um', 'é-parte-de', 'é-composto-por', 'é-uma-variação-de', 'é-um-atributo-de', 'é-um-componente-de', 'é-um-elemento-de', 'é-caracterizado-por'];
 const DOMAIN_NOTES = `- "Natal", "pré-natal" e "pós-natal": aqui SEMPRE se referem ao contexto de mortalidade/natalidade (gravidez, parto, período neonatal) NUNCA ao feriado de Natal (25 de dezembro). Trate esses termos exclusivamente como fases do ciclo gestacional/perinatal, mesmo que a palavra "Natal" sozinha remeta ao feriado no uso cotidiano.`; 
 
 async function callAI(labelGi, labelEi) {   
@@ -716,27 +751,27 @@ async function callAI(labelGi, labelEi) {
   const meiosStr = meiosExistentes.length ? meiosExistentes.join(', ') : '(nenhum ainda)';   
   const systemPrompt = `Você é um ontólogo aplicando o método Sphere-M de construção de grafos de conhecimento. REGRA MAIS IMPORTANTE, aplique-a antes de qualquer outra coisa (DESAMBIGUAÇÃO DE TERMOS): Muitas palavras do português têm mais de um sentido possível. Você NUNCA deve assumir o sentido mais comum ou mais frequente de uma palavra no uso cotidiano. Para CADA termo do par abaixo, primeiro decida qual sentido faz sentido dentro do domínio informado (a lista de "Domínio" no final e os outros conceitos já usados no grafo) - depois de fixar esse sentido, avalie a relação. Se um termo puder ser lido de duas formas diferentes, escolha sempre a leitura compatível com o domínio, mesmo que ela não seja a mais óbvia fora desse contexto. Casos já conhecidos onde isso é crítico (mas a regra vale para qualquer termo ambíguo, não apenas estes): ${DOMAIN_NOTES} O método conecta dois conceitos ("${labelGi}" e "${labelEi}") através de um único CONCEITO INTERMEDIÁRIO (o "meio"), usando relações do tipo AOF: ${TIPOS_AOF.join(' | ')} Sua tarefa: dado um par de conceitos, decidir se existe (ou pode ser construída) uma relação ontológica direta e plausível entre eles, e se sim, propor UM conceito intermediário curto que ligue os dois - de forma que "${labelGi}" se relacione com o meio, e o meio se relacione com "${labelEi}", cada ligação usando um dos tipos AOF acima. Regras estritas de formato responda SEMPRE exatamente neste layout, sem nenhum texto antes ou depois: RELAÇÃO: SIM ou NÃO CONCEITO_MEIO: <1 a 3 palavras, ou "-" se RELAÇÃO for NÃO> TIPO_AOF: <um dos tipos da lista acima, ou "-" se RELAÇÃO for NÃO> JUSTIFICATIVA: <1 a 2 frases, direto, sem introduções como "com certeza" ou "ótima pergunta"> Regras de conteúdo: Não invente relações fracas, genéricas ou forçadas só para preencher a resposta. Se a relação exigir mais de um passo intermediário óbvio ou for artificial, responda RELAÇÃO: NÃO - O CONCEITO_MEIO deve ser um substantivo ou expressão curta, nunca uma frase. - Use os outros elementos do domínio apenas como contexto de fundo, não force conexão com eles. - Conceitos de meio já usados em outros pares deste grafo: ${meiosStr}. NÃO repita nenhum desses como CONCEITO_MEIO - proponha um termo diferente, específico pra esse par. Só repita um termo já usado se ele for literalmente o mesmo conceito exato (não apenas parecido), o que é raro.`;   
   const userPrompt = `Domínio: ${domainContext || '(sem outros elementos ainda)'}\n\nPar a analisar: "${labelGi}" e "${labelEi}".\nLembrete: antes de decidir a relação, confirme o sentido de cada termo do par usando o domínio acima, não o sentido mais comum da palavra fora desse contexto.`;   
-  const apiKey = window.APP_CONFIG?.MISTRAL_API_KEY;  // GROQ_API_KEY 
+  const apiKey = window.APP_CONFIG?.MISTRAL_API_KEY;
   if (!apiKey) return null;   
   try {     
     const controller = new AbortController();     
     const timeoutId = setTimeout(() => controller.abort(), 20000);      
-    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {     // https://api.groq.com/openai/v1/chat/completions
-      method: 'POST',       
-      headers: {         
-        'Content-Type': 'application/json',         
-        'Authorization': `Bearer ${apiKey}`,       
-      },       
-      body: JSON.stringify({         
-        model: 'ministral-8b-latest',         // openai/gpt-oss-120b
-        messages: [           
-          { role: 'system', content: systemPrompt },           
-          { role: 'user',   content: userPrompt   },         
-        ],         
-        temperature: 0.2,         
-        max_tokens: 300,       // 2048
-      }),       
-      signal: controller.signal,     
+    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'ministral-8b-latest',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: userPrompt   },
+        ],
+        temperature: 0.2,
+        max_tokens: 300,
+      }),
+      signal: controller.signal,
     });     
     clearTimeout(timeoutId);     
     if (!response.ok) return null;     
@@ -774,17 +809,17 @@ function parseAIResponse(text) {
 
 function showAIIdle() {   
   _setAIState('idle');   
-  document.getElementById('ai-hint').style.display = 'none'; 
+  el.aiHint.style.display = 'none'; 
 }
 
 function showAILoading() {   
   _setAIState('loading');   
-  document.getElementById('ai-hint').style.display = 'none'; 
+  el.aiHint.style.display = 'none'; 
 }
 
 function showAIError() {   
   _setAIState('error');   
-  document.getElementById('ai-hint').style.display = 'none'; 
+  el.aiHint.style.display = 'none'; 
 }
 
 let _aiWordList = []; 
@@ -831,7 +866,7 @@ function toggleAIWord(idx, span) {
   if (_aiSelectedIdx.size) {     
     const ordenado = [..._aiSelectedIdx].sort((a, b) => a - b).map(i => _aiWordList[i]);     
     const texto = ordenado.join(' ');
-    document.getElementById('input-meio').value = texto;
+    el.inputMeio.value = texto;
     _aiLastMeio = texto;
   }
 }
@@ -856,12 +891,11 @@ if (!_aiJaContabilizado) {
     badge.textContent = 'Sem relação';     
     badge.className = 'not-found';   
   }
-  const hintEl = document.getElementById('ai-hint');   
-  const inputEl = document.getElementById('input-meio');   
+  const hintEl = el.aiHint;   
+  const inputEl = el.inputMeio;   
   const meioLimpo = parsed.meio ? parsed.meio.replace(/\*+/g, '').trim() : null;
   _aiLastMeio = parsed.hasRelation ? meioLimpo : null;
-  _aiLastTipoAof = parsed.hasRelation ? parsed.tipoAof : null;  
-  _aiLastTipoAof = (parsed.hasRelation && TIPOS_AOF.includes(parsed.tipoAof)) ? parsed.tipoAof : null;   
+  _aiLastTipoAof = (parsed.hasRelation && TIPOS_AOF.includes(parsed.tipoAof)) ? parsed.tipoAof : null;
   const jaExiste = parsed.meio && nodes.some(     
     nd => nd.group === 'meio' && nd.label.toLowerCase() === parsed.meio.toLowerCase()   
   );   
@@ -896,28 +930,28 @@ async function updatePairUI() {
     renderAuditPanel();     
     G = new Set(tempG);     
     tempG = new Set();     
-    document.getElementById('pair-prompt').style.opacity = '0.4';     
-    document.getElementById('input-meio').disabled = true;     
-    document.getElementById('confirm-btn').disabled = true;     
-    document.getElementById('skip-btn').disabled = true;     
-    document.getElementById('already-connected-msg').style.display = 'none';     
-    document.getElementById('pair-counter').textContent = 'Rodada ' + round + ' concluída!';     
-    document.getElementById('progress-bar').style.width = '100%';     
+    el.pairPrompt.style.opacity = '0.4';     
+    el.inputMeio.disabled = true;     
+    el.confirmBtn.disabled = true;     
+    el.skipBtn.disabled = true;     
+    el.alreadyConnectedMsg.style.display = 'none';     
+    el.pairCounter.textContent = 'Rodada ' + round + ' concluída!';     
+    el.progressBar.style.width = '100%';     
     showAIIdle();     
     const complete = isGraphComplete();     
     if (complete) {       
-      document.getElementById('done-msg').style.display = 'none';       
-      document.getElementById('complete-msg').style.display = 'block';     
+      el.doneMsg.style.display = 'none';       
+      el.completeMsg.style.display = 'block';     
     } else if (G.size > 0) {       
       GE = buildGE();       
       document.getElementById('round-num').textContent = round;       
-      document.getElementById('done-msg').style.display = GE.length ? 'flex' : 'none';       
-      document.getElementById('complete-msg').style.display = GE.length ? 'none' : 'block';       
+      el.doneMsg.style.display = GE.length ? 'flex' : 'none';       
+      el.completeMsg.style.display = GE.length ? 'none' : 'block';       
       if (!GE.length) GE = buildGEforContinue();     
     } else {       
       GE = buildGEforContinue();       
-      document.getElementById('done-msg').style.display = 'none';       
-      document.getElementById('complete-msg').style.display = 'block';     
+      el.doneMsg.style.display = 'none';       
+      el.completeMsg.style.display = 'block';     
     }     
     startSim(60);     
     return;   
@@ -926,22 +960,22 @@ async function updatePairUI() {
   _aiCurrentPair = [labelA, labelB];   
   document.getElementById('node-a-label').textContent = labelA;   
   document.getElementById('node-b-label').textContent = labelB;   
-  document.getElementById('pair-counter').textContent = `Par ${pairIdx + 1} de ${GE.length} (Rodada ${round})`;   
-  document.getElementById('progress-bar').style.width = `${(pairIdx / GE.length) * 100}%`;   
-  document.getElementById('input-meio').value = '';   
-  document.getElementById('input-meio').disabled = true;      
-  document.getElementById('confirm-btn').disabled = true;   
-  document.getElementById('skip-btn').disabled = false;       
-  document.getElementById('done-msg').style.display = 'none';   
-  document.getElementById('complete-msg').style.display = 'none';   
-  document.getElementById('finished-msg').style.display = 'none';   
-  document.getElementById('pair-prompt').style.opacity = '1';   
+  el.pairCounter.textContent = `Par ${pairIdx + 1} de ${GE.length} (Rodada ${round})`;   
+  el.progressBar.style.width = `${(pairIdx / GE.length) * 100}%`;   
+  el.inputMeio.value = '';   
+  el.inputMeio.disabled = true;      
+  el.confirmBtn.disabled = true;   
+  el.skipBtn.disabled = false;       
+  el.doneMsg.style.display = 'none';   
+  el.completeMsg.style.display = 'none';   
+  el.finishedMsg.style.display = 'none';   
+  el.pairPrompt.style.opacity = '1';   
   const na = nodes.find(n => n.label === labelA);   
   const nb = nodes.find(n => n.label === labelB);   
   const pathStr = (na && nb) ? pathToString(na.id, nb.id) : null;   
-  const msgEl = document.getElementById('already-connected-msg');   
+  const msgEl = el.alreadyConnectedMsg;   
   const pathEl = document.getElementById('already-connected-path');   
-  const inputEl = document.getElementById('input-meio');   
+  const inputEl = el.inputMeio;   
   if (pathStr) {     
     msgEl.style.display = 'flex';     
     pathEl.textContent = pathStr;     
@@ -962,25 +996,25 @@ async function updatePairUI() {
   if (finished || sessionId !== currentSession) return;   
   if (aiText === null) {     
     showAIError();     
-    document.getElementById('skip-btn').disabled = false;     
+    el.skipBtn.disabled = false;     
     return;   
   }
   try {     
     showAIResult(parseAIResponse(aiText));   
   } catch (err) {     
     showAIError();     
-    document.getElementById('skip-btn').disabled = false;     
+    el.skipBtn.disabled = false;     
     return;   
   }
-  document.getElementById('input-meio').disabled = false;   
-  document.getElementById('confirm-btn').disabled = false;   
-  document.getElementById('input-meio').focus(); 
+  el.inputMeio.disabled = false;   
+  el.confirmBtn.disabled = false;   
+  el.inputMeio.focus(); 
 }
 
 // Fluxo Teto -> Meio -> Piso
 function confirmPair() {   
   if (finished) return;   
-  const raw = document.getElementById('input-meio')?.value.trim();   
+  const raw = el.inputMeio?.value.trim();   
   if (!raw) { advancePair(); return; }   
   const humanoModificou = _aiLastMeio === null || raw !== _aiLastMeio;
   const meios = raw.split(',').map(s => s.trim()).filter(Boolean);   
@@ -1034,39 +1068,30 @@ function advancePair() {
   startSim(300); 
 }
 
-function startNextRound() {   
-  if (finished) return;   
+function _avancarRodada({ rebuildGE = false } = {}) {
+  if (finished) return;
   _fecharRodadaStats();
-  round++;   
-  pairIdx = 0;   
-  _iniciarRodadaStats();  
-  document.getElementById('done-msg').style.display = 'none';   
-  document.getElementById('complete-msg').style.display = 'none';   
-  document.getElementById('pair-prompt').style.opacity = '1';   
-  document.getElementById('input-meio').disabled = false;   
-  document.getElementById('confirm-btn').disabled = false;   
-  document.getElementById('skip-btn').disabled = false;   
-  document.getElementById('stop-btn').disabled = false;   
-  updatePairUI();   
-  startSim(300); 
+  round++;
+  if (rebuildGE) GE = buildGEforContinue();
+  pairIdx = 0;
+  _iniciarRodadaStats();
+  el.doneMsg.style.display = 'none';
+  el.completeMsg.style.display = 'none';
+  el.pairPrompt.style.opacity = '1';
+  el.inputMeio.disabled = false;
+  el.confirmBtn.disabled = false;
+  el.skipBtn.disabled = false;
+  el.stopBtn.disabled = false;
+  updatePairUI();
+  startSim(300);
 }
 
-function continueLoop() {   
-  if (finished) return; 
-  _fecharRodadaStats();  
-  round++;   
-  GE = buildGEforContinue();   
-  pairIdx = 0;   
-  _iniciarRodadaStats();
-  document.getElementById('done-msg').style.display = 'none';   
-  document.getElementById('complete-msg').style.display = 'none';   
-  document.getElementById('pair-prompt').style.opacity = '1';   
-  document.getElementById('input-meio').disabled = false;   
-  document.getElementById('confirm-btn').disabled = false;   
-  document.getElementById('skip-btn').disabled = false;   
-  document.getElementById('stop-btn').disabled = false;   
-  updatePairUI();   
-  startSim(300); 
+function startNextRound() {
+  _avancarRodada({ rebuildGE: false });
+}
+
+function continueLoop() {
+  _avancarRodada({ rebuildGE: true });
 }
 
 function finishLoop() {   
@@ -1074,15 +1099,15 @@ function finishLoop() {
   executePoda();      
   finished = true;   
   nodes.forEach(n => { n.highlight = false; n.pulse = 0; });   
-  document.getElementById('pair-prompt').style.opacity = '0.4';   
-  document.getElementById('input-meio').disabled = true;   
-  document.getElementById('confirm-btn').disabled = true;   
-  document.getElementById('skip-btn').disabled = true;   
-  document.getElementById('stop-btn').disabled = true;   
-  document.getElementById('done-msg').style.display = 'none';   
-  document.getElementById('complete-msg').style.display = 'none';   
-  document.getElementById('already-connected-msg').style.display = 'none';   
-  document.getElementById('finished-msg').style.display = 'flex';   
+  el.pairPrompt.style.opacity = '0.4';   
+  el.inputMeio.disabled = true;   
+  el.confirmBtn.disabled = true;   
+  el.skipBtn.disabled = true;   
+  el.stopBtn.disabled = true;   
+  el.doneMsg.style.display = 'none';   
+  el.completeMsg.style.display = 'none';   
+  el.alreadyConnectedMsg.style.display = 'none';   
+  el.finishedMsg.style.display = 'flex';   
   startSim(60); 
 }
 
@@ -1106,9 +1131,9 @@ function finishLoop() {
   }); 
 })(); 
 
-document.getElementById('confirm-btn').addEventListener('click', confirmPair); 
-document.getElementById('skip-btn').addEventListener('click', advancePair); 
-document.getElementById('stop-btn').addEventListener('click', finishLoop); 
+el.confirmBtn.addEventListener('click', confirmPair); 
+el.skipBtn.addEventListener('click', advancePair); 
+el.stopBtn.addEventListener('click', finishLoop); 
 document.getElementById('finish-btn').addEventListener('click', finishLoop); 
 document.getElementById('next-round-btn').addEventListener('click', startNextRound); 
 document.getElementById('continue-btn').addEventListener('click', continueLoop); 
@@ -1116,8 +1141,8 @@ document.getElementById('ai-retry-btn').addEventListener('click', async () => {
   if (!_aiCurrentPair) return;   
   const [labelA, labelB] = _aiCurrentPair;   
   showAILoading();   
-  document.getElementById('input-meio').disabled = true;   
-  document.getElementById('confirm-btn').disabled = true;   
+  el.inputMeio.disabled = true;   
+  el.confirmBtn.disabled = true;   
   const aiText = await callAI(labelA, labelB);   
   if (aiText === null) {     
     showAIError();     
@@ -1125,15 +1150,15 @@ document.getElementById('ai-retry-btn').addEventListener('click', async () => {
   }
   try {     
     showAIResult(parseAIResponse(aiText));     
-    document.getElementById('input-meio').disabled = false;     
-    document.getElementById('confirm-btn').disabled = false;     
-    document.getElementById('input-meio').focus();   
+    el.inputMeio.disabled = false;     
+    el.confirmBtn.disabled = false;     
+    el.inputMeio.focus();   
   } catch (err) {     
     showAIError(); 
   }
 });
 
-document.getElementById('input-meio').addEventListener('keydown', e => {   
+el.inputMeio.addEventListener('keydown', e => {   
   if (e.key === 'Enter') confirmPair();   
   if (e.key === 'Escape') advancePair(); 
 });
@@ -1155,15 +1180,15 @@ function resetAll() {
   _aiLastHasRelation = false;
   _aiJaContabilizado = false;
   if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }   
-  document.getElementById('phase1-panel').style.display = 'block';   
-  document.getElementById('phase2-panel').style.display = 'none';   
-  document.getElementById('finished-msg').style.display = 'none';   
-  document.getElementById('complete-msg').style.display = 'none';   
-  document.getElementById('done-msg').style.display = 'none';   
-  document.getElementById('stop-btn').disabled = false;   
-  document.getElementById('input-teto').value = '';   
-  document.getElementById('input-piso').value = '';   
-  document.getElementById('input-rel').value = '';   
+  el.phase1Panel.style.display = 'block';   
+  el.phase2Panel.style.display = 'none';   
+  el.finishedMsg.style.display = 'none';   
+  el.completeMsg.style.display = 'none';   
+  el.doneMsg.style.display = 'none';   
+  el.stopBtn.disabled = false;   
+  el.inputTeto.value = '';   
+  el.inputPiso.value = '';   
+  el.inputRel.value = '';   
   renderAuditPanel();   
   draw(); 
 }
@@ -1323,8 +1348,8 @@ function importSessionFromObject(raw) {
   // Obs.: pares que foram "pulados" sem gerar conexão não ficam no .json, então
   // não tem como recuperar esse histórico — só o que virou aresta.   
   nodes.filter(nd => nd.group === 'meio').forEach(meio => {     
-    const gis = edges.filter(e => e.to === meio.id).map(e => nodes.find(n => n.id === e.from)?.label).filter(Boolean);     
-    const eis = edges.filter(e => e.from === meio.id).map(e => nodes.find(n => n.id === e.to)?.label).filter(Boolean);     
+    const gis = edges.filter(e => e.to === meio.id).map(e => getNodeById(e.from)?.label).filter(Boolean);
+    const eis = edges.filter(e => e.from === meio.id).map(e => getNodeById(e.to)?.label).filter(Boolean);
     gis.forEach(gi => eis.forEach(ei => {       
       if (gi === ei) return;       
       seenPairs.add([gi, ei].sort().join('|||'));     
@@ -1335,27 +1360,27 @@ function importSessionFromObject(raw) {
   finished = !!data.finished;   
   
   const domain = data.domain || {};   
-  document.getElementById('input-teto').value = (domain.ceiling || nodes.filter(n => n.group === 'teto').map(n => n.label)).join(', ');   
-  document.getElementById('input-piso').value = (domain.floor || nodes.filter(n => n.group === 'piso').map(n => n.label)).join(', ');   
-  document.getElementById('input-rel').value = (domain.relevant || nodes.filter(n => n.group === 'relacionado').map(n => n.label)).join(', ');   
+  el.inputTeto.value = (domain.ceiling || nodes.filter(n => n.group === 'teto').map(n => n.label)).join(', ');   
+  el.inputPiso.value = (domain.floor || nodes.filter(n => n.group === 'piso').map(n => n.label)).join(', ');   
+  el.inputRel.value = (domain.relevant || nodes.filter(n => n.group === 'relacionado').map(n => n.label)).join(', ');   
   
-  document.getElementById('phase1-panel').style.display = 'none';   
-  document.getElementById('phase2-panel').style.display = 'block';   
-  document.getElementById('stop-btn').disabled = false;   
+  el.phase1Panel.style.display = 'none';   
+  el.phase2Panel.style.display = 'block';   
+  el.stopBtn.disabled = false;   
   
   if (finished) {     
     nodes.forEach(n => { n.highlight = false; n.pulse = 0; });     
-    document.getElementById('pair-prompt').style.opacity = '0.4';     
-    document.getElementById('input-meio').disabled = true;     
-    document.getElementById('confirm-btn').disabled = true;     
-    document.getElementById('skip-btn').disabled = true;     
-    document.getElementById('stop-btn').disabled = true;     
-    document.getElementById('done-msg').style.display = 'none';     
-    document.getElementById('complete-msg').style.display = 'none';     
-    document.getElementById('already-connected-msg').style.display = 'none';     
-    document.getElementById('finished-msg').style.display = 'flex';   
+    el.pairPrompt.style.opacity = '0.4';     
+    el.inputMeio.disabled = true;     
+    el.confirmBtn.disabled = true;     
+    el.skipBtn.disabled = true;     
+    el.stopBtn.disabled = true;     
+    el.doneMsg.style.display = 'none';     
+    el.completeMsg.style.display = 'none';     
+    el.alreadyConnectedMsg.style.display = 'none';     
+    el.finishedMsg.style.display = 'flex';   
   } else {     
-    document.getElementById('finished-msg').style.display = 'none';     
+    el.finishedMsg.style.display = 'none';     
     GE = buildGE();     
     pairIdx = 0;     
     updatePairUI();   
@@ -1384,9 +1409,9 @@ function parseAndImportFile(file) {
 }
 
 document.getElementById('import-json-btn').addEventListener('click', () => {   
-  document.getElementById('import-json-input').click(); 
+  el.importJsonInput.click(); 
 }); 
-document.getElementById('import-json-input').addEventListener('change', (e) => {   
+el.importJsonInput.addEventListener('change', (e) => {   
   const file = e.target.files && e.target.files[0];   
   parseAndImportFile(file);   
   e.target.value = ''; 
@@ -1530,10 +1555,10 @@ function distToSegment(px, py, ax, ay, bx, by) {
 function edgeAt(x, y) {   
   const THRESH = 10;   
   let best = null, bestDist = THRESH;   
-  edges.forEach(e => {     
-    const a = nodes.find(n => n.id === e.from), b = nodes.find(n => n.id === e.to);     
-    if (!a || !b) return;     
-    const d = distToSegment(x, y, a.x, a.y, b.x, b.y);     
+  edges.forEach(e => {
+    const a = getNodeById(e.from), b = getNodeById(e.to);
+    if (!a || !b) return;
+    const d = distToSegment(x, y, a.x, a.y, b.x, b.y);
     if (d < bestDist) { bestDist = d; best = e; }   
   });   
   return best; 
@@ -1543,29 +1568,77 @@ let editingEdge = null;
 let edgeAofSelect = null; 
 let edgeTagPanel = null; 
 
-function startEdgeEdit(edge, pos) {   
-  if (editingNode) commitNodeEdit();   
-  if (editingEdge) commitEdgeEdit();   
-  editingEdge = edge;   
-  const rect = canvas.getBoundingClientRect();   
-  const scaleX = rect.width / W;   
-  const scaleY = rect.height / H;   
-  const a = nodes.find(n => n.id === edge.from), b = nodes.find(n => n.id === edge.to);   
-  edgeTagPanel = document.createElement('div');   
-  edgeTagPanel.style.position = 'fixed';   
-  edgeTagPanel.style.left = (rect.left + pos.x * scaleX - 90) + 'px';   
-  edgeTagPanel.style.top  = (rect.top  + pos.y * scaleY - 10) + 'px';   
-  edgeTagPanel.style.zIndex = '9999';   
-  edgeTagPanel.style.boxShadow = '0 4px 14px rgba(0,0,0,0.18)';   
-  edgeTagPanel.style.display = 'flex';   
-  edgeTagPanel.style.flexDirection = 'column';   
-  edgeTagPanel.style.gap = '6px';   
-  edgeTagPanel.style.padding = '8px';   
-  edgeTagPanel.style.width = '190px';   
-  edgeTagPanel.style.border = '1px solid var(--border2, #ccc7ba)';   
-  edgeTagPanel.style.borderRadius = 'var(--radius-sm, 8px)';   
-  edgeTagPanel.style.background = 'var(--surface, #faf9f6)';   
-  const titleEl = document.createElement('div');   
+// Helpers reaproveitados pelos painéis flutuantes de edição (aresta e nó).
+function criarPainelFlutuante(left, top, width) {
+  const panel = document.createElement('div');
+  panel.style.position = 'fixed';
+  panel.style.left = left + 'px';
+  panel.style.top  = top + 'px';
+  panel.style.zIndex = '9999';
+  panel.style.boxShadow = '0 4px 14px rgba(0,0,0,0.18)';
+  panel.style.display = 'flex';
+  panel.style.flexDirection = 'column';
+  panel.style.gap = '6px';
+  panel.style.padding = '8px';
+  panel.style.width = width + 'px';
+  panel.style.border = '1px solid var(--border2, #ccc7ba)';
+  panel.style.borderRadius = 'var(--radius-sm, 8px)';
+  panel.style.background = 'var(--surface, #faf9f6)';
+  return panel;
+}
+
+function criarBotoesOkCancelar(onOk, onCancel) {
+  const btnRow = document.createElement('div');
+  btnRow.style.display = 'flex';
+  btnRow.style.gap = '6px';
+  const okBtn = document.createElement('button');
+  okBtn.type = 'button';
+  okBtn.textContent = 'OK';
+  okBtn.style.cssText = `
+    flex: 1; font: 600 11px "Geist Mono", ui-monospace, monospace;
+    padding: 5px 6px; border-radius: 6px; border: none; cursor: pointer;
+    background: var(--accent, #6d1fc2); color: #fff;
+  `;
+  okBtn.addEventListener('click', onOk);
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.textContent = 'Cancelar';
+  cancelBtn.style.cssText = `
+    flex: 1; font: 500 11px "Geist Mono", ui-monospace, monospace;
+    padding: 5px 6px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border2, #ccc7ba);
+    background: var(--surface2, #f3f1ec); color: var(--text-2, #4a463e);
+  `;
+  cancelBtn.addEventListener('click', onCancel);
+  btnRow.appendChild(okBtn);
+  btnRow.appendChild(cancelBtn);
+  return btnRow;
+}
+
+function registrarFechamentoAoClicarFora(estaAtivo, obterElementos, onFechar) {
+  const handler = ev => {
+    if (!estaAtivo()) return;
+    if (obterElementos().some(el => el?.contains(ev.target))) return;
+    onFechar();
+  };
+  document.addEventListener('mousedown', handler, true);
+  return () => document.removeEventListener('mousedown', handler, true);
+}
+
+function startEdgeEdit(edge, pos) {
+  if (editingNode) commitNodeEdit();
+  if (editingEdge) commitEdgeEdit();
+  editingEdge = edge;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = rect.width / W;
+  const scaleY = rect.height / H;
+  const a = getNodeById(edge.from), b = getNodeById(edge.to);
+  edgeTagPanel = criarPainelFlutuante(
+    rect.left + pos.x * scaleX - 90,
+    rect.top  + pos.y * scaleY - 10,
+    190
+  );
+  const titleEl = document.createElement('div');
   titleEl.textContent = `${a?.label ?? '?'} -> ${b?.label ?? '?'}`;   
   titleEl.style.cssText = 'font:600 10px "Geist Mono", ui-monospace, monospace; opacity:0.75; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';   
   const selStyle = `     
@@ -1575,16 +1648,15 @@ function startEdgeEdit(edge, pos) {
     background: var(--surface2, #f3f1ec); color: var(--text, #1c1a17);     
     cursor: pointer; outline: none;   
   `;   
-  const selTipo = document.createElement('select');   
-  selTipo.title = 'Tipo de relação (AOF)';   
-  selTipo.style.cssText = selStyle;   
-  const opts = [...TIPOS_AOF.map(t => [t, t])];   
-  opts.forEach(([v, t]) => {     
-    const opt = document.createElement('option');     
-    opt.value = v; opt.textContent = t;     
-    if ((edge.tipo || '') === v) opt.selected = true;     
-    selTipo.appendChild(opt);   
-  });   
+  const selTipo = document.createElement('select');
+  selTipo.title = 'Tipo de relação (AOF)';
+  selTipo.style.cssText = selStyle;
+  TIPOS_AOF.forEach(tipo => {
+    const opt = document.createElement('option');
+    opt.value = tipo; opt.textContent = tipo;
+    if ((edge.tipo || '') === tipo) opt.selected = true;
+    selTipo.appendChild(opt);
+  });
   const inputManual = document.createElement('input');   
   inputManual.type = 'text';   
   inputManual.placeholder = 'Ou digite outro FOA';   
@@ -1609,49 +1681,24 @@ function startEdgeEdit(edge, pos) {
   inputManual.addEventListener('input', () => {     
     if (inputManual.value.trim() !== '') selTipo.value = '';   
   });   
-  const btnRow = document.createElement('div');   
-  btnRow.style.display = 'flex';   
-  btnRow.style.gap = '6px';   
-  const okBtn = document.createElement('button');   
-  okBtn.type = 'button';   
-  okBtn.textContent = 'OK';   
-  okBtn.style.cssText = `     
-    flex: 1; font: 600 11px "Geist Mono", ui-monospace, monospace;     
-    padding: 5px 6px; border-radius: 6px; border: none; cursor: pointer;     
-    background: var(--accent, #6d1fc2); color: #fff;   
-  `;   
-  okBtn.addEventListener('click', () => commitEdgeEdit());   
-  const cancelBtn = document.createElement('button');   
-  cancelBtn.type = 'button';   
-  cancelBtn.textContent = 'Cancelar';   
-  cancelBtn.style.cssText = `     
-    flex: 1; font: 500 11px "Geist Mono", ui-monospace, monospace;     
-    padding: 5px 6px; border-radius: 6px; cursor: pointer;     
-    border: 1px solid var(--border2, #ccc7ba);     
-    background: var(--surface2, #f3f1ec); color: var(--text-2, #4a463e);   
-  `;   
-  cancelBtn.addEventListener('click', () => cancelEdgeEdit());   
-  btnRow.appendChild(okBtn);   
-  btnRow.appendChild(cancelBtn);   
-  edgeTagPanel.appendChild(titleEl);   
-  edgeTagPanel.appendChild(selTipo);   
-  edgeTagPanel.appendChild(inputManual);   
-  edgeTagPanel.appendChild(btnRow);   
-  document.body.appendChild(edgeTagPanel);   
-  edgeTagPanel._selTipo = selTipo;   
-  edgeTagPanel._inputManual = inputManual;   
-  selTipo.addEventListener('keydown', ev => {     
-    if (ev.key === 'Enter')  { ev.preventDefault(); commitEdgeEdit(); }     
-    if (ev.key === 'Escape') { ev.preventDefault(); cancelEdgeEdit(); }   
-  });   
-  selTipo.focus();   
-  const outsideClickHandler = ev => {     
-    if (!editingEdge) return;     
-    if (edgeTagPanel?.contains(ev.target)) return;     
-    commitEdgeEdit();   
-  };   
-  document.addEventListener('mousedown', outsideClickHandler, true);   
-  edgeTagPanel._cleanup = () => document.removeEventListener('mousedown', outsideClickHandler, true); 
+  const btnRow = criarBotoesOkCancelar(() => commitEdgeEdit(), () => cancelEdgeEdit());
+  edgeTagPanel.appendChild(titleEl);
+  edgeTagPanel.appendChild(selTipo);
+  edgeTagPanel.appendChild(inputManual);
+  edgeTagPanel.appendChild(btnRow);
+  document.body.appendChild(edgeTagPanel);
+  edgeTagPanel._selTipo = selTipo;
+  edgeTagPanel._inputManual = inputManual;
+  selTipo.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter')  { ev.preventDefault(); commitEdgeEdit(); }
+    if (ev.key === 'Escape') { ev.preventDefault(); cancelEdgeEdit(); }
+  });
+  selTipo.focus();
+  edgeTagPanel._cleanup = registrarFechamentoAoClicarFora(
+    () => !!editingEdge,
+    () => [edgeTagPanel],
+    () => commitEdgeEdit()
+  );
 }
 
 function commitEdgeEdit() {   
@@ -1705,21 +1752,12 @@ function startNodeEdit(node) {
   nodeEditInput.style.boxShadow = '0 2px 8px rgba(0,0,0,0.18)';   
   document.body.appendChild(nodeEditInput);   
   nodeEditInput.select();   
-  nodeTagPanel = document.createElement('div');   
-  nodeTagPanel.style.position = 'fixed';   
-  nodeTagPanel.style.left = nodeEditInput.style.left;   
-  nodeTagPanel.style.top  = (rect.top + (node.y - node.h / 2) * scaleY + 30) + 'px';   
-  nodeTagPanel.style.zIndex = '9999';   
-  nodeTagPanel.style.boxShadow = '0 4px 14px rgba(0,0,0,0.18)';   
-  nodeTagPanel.style.display = 'flex';   
-  nodeTagPanel.style.flexDirection = 'column';   
-  nodeTagPanel.style.gap = '6px';   
-  nodeTagPanel.style.padding = '8px';   
-  nodeTagPanel.style.width = Math.max(node.w * scaleX, 170) + 'px';   
-  nodeTagPanel.style.border = '1px solid var(--border2, #ccc7ba)';   
-  nodeTagPanel.style.borderRadius = 'var(--radius-sm, 8px)';   
-  nodeTagPanel.style.background = 'var(--surface, #faf9f6)';   
-  const selectsRow = document.createElement('div');   
+  nodeTagPanel = criarPainelFlutuante(
+    rect.left + (node.x - node.w / 2) * scaleX,
+    rect.top  + (node.y - node.h / 2) * scaleY + 30,
+    Math.max(node.w * scaleX, 170)
+  );
+  const selectsRow = document.createElement('div');
   selectsRow.style.display = 'flex';   
   selectsRow.style.gap = '6px';   
   const selStyle = `     
@@ -1747,55 +1785,29 @@ function startNodeEdit(node) {
     if (node.tagCaminho === v || (!node.tagCaminho && v === '')) opt.selected = true;     
     selCaminho.appendChild(opt);   
   });   
-  selectsRow.appendChild(selNatureza);   
-  selectsRow.appendChild(selCaminho);   
-  const btnRow = document.createElement('div');   
-  btnRow.style.display = 'flex';   
-  btnRow.style.gap = '6px';   
-  const okBtn = document.createElement('button');   
-  okBtn.type = 'button';   
-  okBtn.textContent = 'OK';   
-  okBtn.style.cssText = `     
-    flex: 1; font: 600 11px "Geist Mono", ui-monospace, monospace;     
-    padding: 5px 6px; border-radius: 6px; border: none; cursor: pointer;     
-    background: var(--accent, #6d1fc2); color: #fff;   
-  `;   
-  okBtn.addEventListener('click', () => commitNodeEdit());   
-  const cancelBtn = document.createElement('button');   
-  cancelBtn.type = 'button';   
-  cancelBtn.textContent = 'Cancelar';   
-  cancelBtn.style.cssText = `     
-    flex: 1; font: 500 11px "Geist Mono", ui-monospace, monospace;     
-    padding: 5px 6px; border-radius: 6px; cursor: pointer;     
-    border: 1px solid var(--border2, #ccc7ba);     
-    background: var(--surface2, #f3f1ec); color: var(--text-2, #4a463e);   
-  `;   
-  cancelBtn.addEventListener('click', () => cancelNodeEdit());   
-  btnRow.appendChild(okBtn);   
-  btnRow.appendChild(cancelBtn);   
-  nodeTagPanel.appendChild(selectsRow);   
-  nodeTagPanel.appendChild(btnRow);   
-  document.body.appendChild(nodeTagPanel);   
-  nodeTagPanel._selNatureza = selNatureza;   
-  nodeTagPanel._selCaminho = selCaminho;   
-  nodeEditInput.addEventListener('keydown', e => {     
-    if (e.key === 'Enter')  { e.preventDefault(); commitNodeEdit(); }     
-    if (e.key === 'Escape') { e.preventDefault(); cancelNodeEdit(); }   
-  });   
-  [selNatureza, selCaminho].forEach(sel => {     
-    sel.addEventListener('keydown', e => {       
-      if (e.key === 'Enter')  { e.preventDefault(); commitNodeEdit(); }       
-      if (e.key === 'Escape') { e.preventDefault(); cancelNodeEdit(); }     
-    });   
-  });   
-  const outsideClickHandler = e => {     
-    if (!editingNode) return;     
-    if (nodeEditInput?.contains(e.target)) return;     
-    if (nodeTagPanel?.contains(e.target)) return;     
-    commitNodeEdit();   
-  };   
-  document.addEventListener('mousedown', outsideClickHandler, true);   
-  nodeTagPanel._cleanup = () => document.removeEventListener('mousedown', outsideClickHandler, true); 
+  selectsRow.appendChild(selNatureza);
+  selectsRow.appendChild(selCaminho);
+  const btnRow = criarBotoesOkCancelar(() => commitNodeEdit(), () => cancelNodeEdit());
+  nodeTagPanel.appendChild(selectsRow);
+  nodeTagPanel.appendChild(btnRow);
+  document.body.appendChild(nodeTagPanel);
+  nodeTagPanel._selNatureza = selNatureza;
+  nodeTagPanel._selCaminho = selCaminho;
+  nodeEditInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); commitNodeEdit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancelNodeEdit(); }
+  });
+  [selNatureza, selCaminho].forEach(sel => {
+    sel.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); commitNodeEdit(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancelNodeEdit(); }
+    });
+  });
+  nodeTagPanel._cleanup = registrarFechamentoAoClicarFora(
+    () => !!editingNode,
+    () => [nodeEditInput, nodeTagPanel],
+    () => commitNodeEdit()
+  );
 }
 
 function commitNodeEdit() {   

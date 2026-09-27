@@ -113,8 +113,7 @@ class Grafo:
             self.raio = self.iteracao_atual
 
 
-def Buscar_Relacoes(grafo: Grafo, dominio: list[str],
-                    ei: str, gi: str) -> str | None:
+def Buscar_Relacoes(grafo: Grafo, ei: str, gi: str) -> str | None:
     print(f"\n{'─'*50}")
     print(f"  Par: '{gi}'  ×  '{ei}'")
     print(f"  Tipos disponíveis: {TIPOS_AOF_REF}")
@@ -159,8 +158,7 @@ def Buscar_Relacoes(grafo: Grafo, dominio: list[str],
         if continua != "s":
             return "PARAR"
     elif acao == "e":
-        caminho = input("  Nome do arquivo (ex: minha_esfera.json): ").strip() or "minha_esfera.json"
-        exportar_modelo(grafo, caminho)
+        _Exportar_Interativo(grafo)
 
     grafo.Adicionar_No(leg, ei, gi)
     grafo.Adicionar_FAO(ei, leg, tipo_ei_leg, gi, tipo_leg_gi)
@@ -170,6 +168,11 @@ def Buscar_Relacoes(grafo: Grafo, dominio: list[str],
     return leg
 
 
+def _Exportar_Interativo(grafo: Grafo):
+    caminho = input("  Nome do arquivo (ex: minha_esfera.json): ").strip() or "minha_esfera.json"
+    exportar_modelo(grafo, caminho)
+
+
 def _Perguntar_Visualizacao_E_Exportacao(grafo: Grafo):
     ver = input("\nDeseja visualizar o grafo agora? (s/n): ").strip().lower()
     if ver == 's':
@@ -177,8 +180,7 @@ def _Perguntar_Visualizacao_E_Exportacao(grafo: Grafo):
 
     exp = input("Deseja exportar o modelo (json) agora? (s/n): ").strip().lower()
     if exp == 's':
-        caminho = input("  Nome do arquivo (ex: minha_esfera.json): ").strip() or "minha_esfera.json"
-        exportar_modelo(grafo, caminho)
+        _Exportar_Interativo(grafo)
 
 
 def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo,
@@ -186,7 +188,6 @@ def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo,
     leg_gerados: list[str] = []
 
     E = list(dict.fromkeys(E + G))
-    dominio = E
 
     grafo.iteracao_atual = iteracao
 
@@ -198,7 +199,7 @@ def Buscar_Pares_Aux(E: list[str], G: list[str], grafo: Grafo,
                 continue
 
             pares_vistos.add((ei, gi))
-            resultado = Buscar_Relacoes(grafo, dominio, ei, gi)
+            resultado = Buscar_Relacoes(grafo, ei, gi)
 
             if resultado == "PARAR":
                 print("\n[!] Interrompido pelo usuario.")

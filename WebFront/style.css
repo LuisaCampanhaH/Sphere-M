@@ -1219,6 +1219,38 @@ button:active { transform: scale(0.98); }
   margin-top: 4px;
 }
 
+/* Variante leve do colapsável, usada na explicação das métricas:
+   sem fundo, sem borda e sem o padding lateral dos painéis de "mais opções". */
+.hint-collapsible {
+  padding: 0;
+  border-top: none;
+  background: none;
+  margin-top: 6px;
+}
+
+.hint-collapsible .collapsible-toggle {
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.hint-collapsible.collapsed .collapsible-toggle {
+  padding-bottom: 4px;
+}
+
+.hint-toggle-label {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  transition: color 0.3s;
+}
+
+.hint-collapsible .collapsible-toggle:hover .hint-toggle-label {
+  color: var(--text);
+}
+
 #metrics-hint {
   font-family: 'Geist Mono', monospace;
   font-size: 13px;

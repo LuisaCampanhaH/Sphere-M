@@ -1541,6 +1541,8 @@ document.getElementById('reset-btn2').addEventListener('click', resetAll);
     { id: 'tag-audit', toggleId: 'tag-audit-toggle', storageKey: 'sphere-tag-audit-collapsed' },     
     { id: 'export-section', toggleId: 'export-toggle', storageKey: 'sphere-export-collapsed' },
     { id: 'metrics-hint-section', toggleId: 'metrics-hint-toggle', storageKey: 'sphere-metrics-hint-collapsed' },
+    { id: 'export-hint-section', toggleId: 'export-hint-toggle', storageKey: 'sphere-export-hint-collapsed' },
+    { id: 'import-hint-section', toggleId: 'import-hint-toggle', storageKey: 'sphere-import-hint-collapsed' },
   ];
   sections.forEach(({ id, toggleId, storageKey }) => {     
     const section = document.getElementById(id);     

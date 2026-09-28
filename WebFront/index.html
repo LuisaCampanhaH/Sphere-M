@@ -215,7 +215,17 @@
         <div id="metrics-inline">
           <div class="section-label">Métricas</div>
           <button id="metrics-btn" class="btn-ghost" style="width:100%">📊 Calcular métricas</button>
-          <p id="metrics-hint">chama um servidor Python local (<code>python "Python code/server.py"</code>, porta 5001) que roda <code>metricas.py</code> de verdade — nada é recalculado aqui no JS.</p>
+          <div id="metrics-hint-section" class="sidebar-collapsible hint-collapsible">
+            <button id="metrics-hint-toggle" class="collapsible-toggle" type="button" aria-expanded="false" aria-controls="metrics-hint-content">
+              <span class="hint-toggle-label">como funciona</span>
+              <span id="metrics-hint-chevron" class="chevron">▾</span>
+            </button>
+            <div id="metrics-hint-content" class="collapsible-content">
+              <div class="collapsible-inner">
+                <p id="metrics-hint">chama um servidor Python local (<code>python "Python code/server.py"</code>, porta 5001) que roda <code>metricas.py</code> de verdade — nada é recalculado aqui no JS.</p>
+              </div>
+            </div>
+          </div>
           <div id="metrics-panel"></div>
         </div>
 

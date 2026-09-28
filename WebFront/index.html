@@ -20,13 +20,22 @@
     <div id="canvas-side">
       <div id="canvas-wrap">
         <canvas id="graph-canvas"></canvas>
-        <button id="reset-view-btn" type="button" title="Resetar zoom/posição do grafo">
+        <button id="reset-view-btn" type="button" title="Resetar visualização (zoom e posição)" aria-label="Resetar visualização">
           <span>⟲</span>
         </button>
         <button id="toggle-edge-labels-btn" type="button" title="Mostrar/ocultar rótulos das relações (ou clique direito no grafo)" aria-pressed="true">
           <span id="toggle-edge-labels-icon">🏷️</span>
         </button>
-        <div id="canvas-overlay-hint">drag · duplo clique no nó pra editar · clique na aresta pro tipo AOF · scroll: zoom · botão do meio/espaço+arraste: mover · delete</div>
+        <button id="show-hidden-btn" type="button" title="Mostrar todos os nós escondidos — inclui os podados automaticamente (Alt+clique num nó pra esconder/mostrar)" style="display:none">
+          <span>👁</span><span id="hidden-count"></span>
+        </button>
+        <div id="path-status" style="display:none">
+          <span id="path-status-text"></span>
+          <button id="path-include-connectors-btn" type="button" style="display:none" title="Acrescenta à seleção os nós do caminho mais curto entre cada par consecutivo">🔗 incluir nós que ligam</button>
+          <button id="path-status-clear" type="button" aria-label="Limpar seleção">✕</button>
+        </div>
+        <div id="path-filter-warning" style="display:none"></div>
+        <div id="canvas-overlay-hint">drag · duplo clique no nó pra editar · clique na aresta pro tipo AOF · scroll: zoom · Alt+clique: esconder/mostrar nó (poda nós do meio com 1 ligação) · Shift+clique: seleciona nó (mostra só selecionados) · botão do meio/espaço+arraste: mover · delete</div>
         <div id="dropzone-overlay">
           <div id="dropzone-inner">
             <span id="dropzone-icon">⇩</span>
@@ -46,9 +55,14 @@
             <span id="logo-title">Sphere<em>-M</em></span>
             <span id="logo-sub">ontology capture</span>
           </div>
-          <button id="theme-toggle" title="Alternar tema" aria-label="Alternar tema claro/escuro">
-            <span id="theme-icon">☽</span>
-          </button>
+          <div id="header-actions">
+            <button id="more-options-btn" title="Mais opções (legenda, auditoria, Python, métricas)" aria-label="Abrir mais opções" aria-expanded="false" aria-controls="more-options-panel">
+              <span>⚙</span>
+            </button>
+            <button id="theme-toggle" title="Alternar tema" aria-label="Alternar tema claro/escuro">
+              <span id="theme-icon">☽</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -197,82 +211,96 @@
           </div>
         </div>
 
-      </div><!-- /sidebar-body -->
-
-      <!-- Legend -->
-      <div id="legend" class="sidebar-collapsible">
-        <button id="legend-toggle" class="collapsible-toggle" type="button" aria-expanded="true" aria-controls="legend-content">
-          <span class="legend-title" style="margin-bottom:0">legenda</span>
-          <span id="legend-chevron" class="chevron">▾</span>
-        </button>
-        <div id="legend-content" class="collapsible-content">
-          <div class="legend-grid">
-            <div class="legend-item">
-              <span class="legend-dot" style="background:var(--teto);"></span>teto
-            </div>
-            <div class="legend-item">
-              <span class="legend-dot" style="background:var(--piso);"></span>piso
-            </div>
-            <div class="legend-item">
-              <span class="legend-dot" style="background:var(--rel);"></span>relacionado
-            </div>
-            <div class="legend-item">
-              <span class="legend-dot" style="background:var(--meio);"></span>meio
-            </div>
-          </div>
-          <div class="legend-title" style="margin-top:8px">dupla tag (duplo clique no nó)</div>
-          <div class="legend-grid">
-            <div class="legend-item"><span class="legend-dot" style="background:#0a8f3c;"></span>caminho positivo</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#c1121f;"></span>caminho negativo</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#6a2ca5;"></span>caminho ambos</div>
-            <div class="legend-item">■ Classe</div>
-            <div class="legend-item">● Objeto</div>
-            <div class="legend-item">▲ Atributo</div>
-            <div class="legend-item">◆ Instância</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Auditoria da tag de caminho -->
-      <div id="tag-audit" class="sidebar-collapsible">
-        <button id="tag-audit-toggle" class="collapsible-toggle" type="button" aria-expanded="true" aria-controls="tag-audit-content">
-          <span class="legend-title" style="margin-bottom:0">auditoria de caminho</span>
-          <span id="tag-audit-chevron" class="chevron">▾</span>
-        </button>
-        <div id="tag-audit-content" class="collapsible-content">
-          <div id="tag-audit-panel"></div>
-        </div>
-      </div>
-
-      <!-- Exportação para o motor Python (métricas/visualização) -->
-      <div id="export-section" class="sidebar-collapsible">
-        <button id="export-toggle" class="collapsible-toggle" type="button" aria-expanded="true" aria-controls="export-content">
-          <span class="legend-title" style="margin-bottom:0">ponte com o Python</span>
-          <span id="export-chevron" class="chevron">▾</span>
-        </button>
-        <div id="export-content" class="collapsible-content">
-          <button id="export-json-btn" class="btn-ghost" style="width:100%">⇩ Exportar sessão (JSON)</button>
-          <p id="export-hint">gera um .json com nós, arestas e tags — leia com <code>Python code/importar_grafo.py</code> pra calcular raio, densidade, eficiência e produtividade, ou gerar a visualização pyvis.</p>
-          <button id="import-json-btn" class="btn-ghost" style="width:100%">⇧ Importar sessão (JSON)</button>
-          <input type="file" id="import-json-input" accept="application/json,.json" hidden />
-          <p id="import-hint">carrega um .json exportado daqui (ou gerado pelo mesmo formato) de volta pro canvas — também dá pra arrastar o arquivo direto pro grafo.</p>
-        </div>
-      </div>
-
-      <!-- Métricas do grafo (via servidor Python local, server.py) -->
-      <div id="metrics-section" class="sidebar-collapsible">
-        <button id="metrics-toggle" class="collapsible-toggle" type="button" aria-expanded="true" aria-controls="metrics-content">
-          <span class="legend-title" style="margin-bottom:0">métricas</span>
-          <span id="metrics-chevron" class="chevron">▾</span>
-        </button>
-        <div id="metrics-content" class="collapsible-content collapsible-content--tall">
+        <!-- Métricas — sempre visível, logo abaixo da captura de pares -->
+        <div id="metrics-inline">
+          <div class="section-label">Métricas</div>
           <button id="metrics-btn" class="btn-ghost" style="width:100%">📊 Calcular métricas</button>
           <p id="metrics-hint">chama um servidor Python local (<code>python "Python code/server.py"</code>, porta 5001) que roda <code>metricas.py</code> de verdade — nada é recalculado aqui no JS.</p>
           <div id="metrics-panel"></div>
         </div>
-      </div>
+
+      </div><!-- /sidebar-body -->
 
     </div><!-- /sidebar -->
+
+    <!-- Painel de "mais opções" — desliza por cima do canvas -->
+    <div id="more-options-overlay">
+      <div id="more-options-panel">
+        <div id="more-options-header">
+          <span class="legend-title" style="margin-bottom:0">mais opções</span>
+          <button id="more-options-close" type="button" aria-label="Fechar mais opções">✕</button>
+        </div>
+        <div id="more-options-body">
+
+          <!-- Legend -->
+          <div id="legend" class="sidebar-collapsible">
+            <button id="legend-toggle" class="collapsible-toggle" type="button" aria-expanded="false" aria-controls="legend-content">
+              <span class="legend-title" style="margin-bottom:0">legenda</span>
+              <span id="legend-chevron" class="chevron">▾</span>
+            </button>
+            <div id="legend-content" class="collapsible-content">
+              <div class="collapsible-inner">
+                <div class="legend-grid">
+                  <div class="legend-item">
+                    <span class="legend-dot" style="background:var(--teto);"></span>teto
+                  </div>
+                  <div class="legend-item">
+                    <span class="legend-dot" style="background:var(--piso);"></span>piso
+                  </div>
+                  <div class="legend-item">
+                    <span class="legend-dot" style="background:var(--rel);"></span>relacionado
+                  </div>
+                  <div class="legend-item">
+                    <span class="legend-dot" style="background:var(--meio);"></span>meio
+                  </div>
+                </div>
+                <div class="legend-title" style="margin-top:6px">dupla tag (duplo clique no nó)</div>
+                <div class="legend-grid">
+                  <div class="legend-item"><span class="legend-dot" style="background:#0a8f3c;"></span>positivo</div>
+                  <div class="legend-item"><span class="legend-dot" style="background:#c1121f;"></span>negativo</div>
+                  <div class="legend-item"><span class="legend-dot" style="background:#6a2ca5;"></span>ambos</div>
+                  <div class="legend-item"><span class="legend-glyph">■</span>Classe</div>
+                  <div class="legend-item"><span class="legend-glyph">●</span>Objeto</div>
+                  <div class="legend-item"><span class="legend-glyph">▲</span>Atributo</div>
+                  <div class="legend-item"><span class="legend-glyph">◆</span>Instância</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Auditoria da tag de caminho -->
+          <div id="tag-audit" class="sidebar-collapsible">
+            <button id="tag-audit-toggle" class="collapsible-toggle" type="button" aria-expanded="false" aria-controls="tag-audit-content">
+              <span class="legend-title" style="margin-bottom:0">auditoria de caminho<span id="tag-audit-count"></span></span>
+              <span id="tag-audit-chevron" class="chevron">▾</span>
+            </button>
+            <div id="tag-audit-content" class="collapsible-content">
+              <div class="collapsible-inner">
+                <div id="tag-audit-panel"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Exportação para o motor Python (métricas/visualização) -->
+          <div id="export-section" class="sidebar-collapsible">
+            <button id="export-toggle" class="collapsible-toggle" type="button" aria-expanded="false" aria-controls="export-content">
+              <span class="legend-title" style="margin-bottom:0">ponte com o Python</span>
+              <span id="export-chevron" class="chevron">▾</span>
+            </button>
+            <div id="export-content" class="collapsible-content">
+              <div class="collapsible-inner">
+                <button id="export-json-btn" class="btn-ghost" style="width:100%">⇩ Exportar sessão (JSON)</button>
+                <p id="export-hint">gera um .json com nós, arestas e tags — leia com <code>Python code/importar_grafo.py</code> pra calcular raio, densidade, eficiência e produtividade, ou gerar a visualização pyvis.</p>
+                <button id="import-json-btn" class="btn-ghost" style="width:100%">⇧ Importar sessão (JSON)</button>
+                <input type="file" id="import-json-input" accept="application/json,.json" hidden />
+                <p id="import-hint">carrega um .json exportado daqui (ou gerado pelo mesmo formato) de volta pro canvas — também dá pra arrastar o arquivo direto pro grafo.</p>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /more-options-body -->
+      </div><!-- /more-options-panel -->
+    </div><!-- /more-options-overlay -->
 
   </div>
   <script src="config.js"></script>

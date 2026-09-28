@@ -1,3 +1,10 @@
+@charset "UTF-8";
+/* Declarado explicitamente porque servidores locais como "python -m
+   http.server" (o que o README recomenda) não mandam charset=utf-8 no
+   header HTTP — sem isso, o navegador pode decodificar acentos/travessões
+   dos comentários com o encoding errado e quebrar o parsing do arquivo
+   inteiro a partir daí (foi exatamente isso que causou um bug real). */
+
 /* ── Fonts & Reset ─────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@300;400;500&family=Geist:wght@300;400;500;600&display=swap');
 
@@ -14,23 +21,23 @@
   --border:       #ddd9cf;
   --border2:      #ccc7ba;
 
-  --teto:         #c73d0a;
-  --teto-soft:    #f9ede7;
-  --teto-mid:     #f0c4b0;
-  --piso:         #1750b0;
-  --piso-soft:    #e7edf9;
-  --piso-mid:     #b0c2ec;
-  --rel:          #187840;
-  --rel-soft:     #e7f4ed;
-  --rel-mid:      #a8d9bc;
-  --meio:         #6d1fc2;
-  --meio-soft:    #f0e8fb;
-  --meio-mid:     #c9a8f0;
+  --teto:         #bd3705;
+  --teto-soft:    #f3d0bf;
+  --teto-mid:     #eb885c;
+  --piso:         #0947ae;
+  --piso-soft:    #c0d0f2;
+  --piso-mid:     #5e88e8;
+  --rel:          #0a7b39;
+  --rel-soft:     #c0edd4;
+  --rel-mid:      #5fdd93;
+  --meio:         #620cc0;
+  --meio-soft:    #d7c2f5;
+  --meio-mid:     #9d5ceb;
 
   --text:         #1c1a17;
   --text-2:       #4a463e;
   --text-muted:   #8a8278;
-  --accent:       #6d1fc2;
+  --accent:       #620cc0;
 
   --canvas-dot:   rgba(0,0,0,0.07);
   --edge-color:   rgba(0,0,0,0.13);
@@ -51,23 +58,23 @@
   --border:       #333026;
   --border2:      #403c2e;
 
-  --teto:         #f06030;
-  --teto-soft:    #2a1509;
-  --teto-mid:     #6b3018;
-  --piso:         #4a80e8;
-  --piso-soft:    #091428;
-  --piso-mid:     #1c3a70;
-  --rel:          #3dba6e;
-  --rel-soft:     #071a0f;
-  --rel-mid:      #134a26;
-  --meio:         #b06af0;
-  --meio-soft:    #180b2a;
-  --meio-mid:     #4a1e80;
+  --teto:         #f66331;
+  --teto-soft:    #401f0c;
+  --teto-mid:     #963813;
+  --piso:         #4983f3;
+  --piso-soft:    #0c1d3b;
+  --piso-mid:     #17418c;
+  --rel:          #25e470;
+  --rel-soft:     #0c311c;
+  --rel-mid:      #15843b;
+  --meio:         #b66ef7;
+  --meio-soft:    #251042;
+  --meio-mid:     #5517a1;
 
   --text:         #f0ece3;
   --text-2:       #b8b4a8;
   --text-muted:   #6a665a;
-  --accent:       #b06af0;
+  --accent:       #b66ef7;
 
   --canvas-dot:   rgba(255,255,255,0.05);
   --edge-color:   rgba(255,255,255,0.12);
@@ -213,6 +220,119 @@ canvas {
   opacity: 0.85;
 }
 
+#show-hidden-btn {
+  position: absolute;
+  top: 14px;
+  right: 54px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 10px;
+  border-radius: 16px;
+  border: 1.5px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.15s ease;
+}
+#show-hidden-btn:hover {
+  background: var(--surface3);
+  border-color: var(--border2);
+  transform: scale(1.04);
+}
+#hidden-count {
+  font-family: 'Geist Mono', monospace;
+  font-weight: 600;
+}
+
+/* Barra de status: filtro "mostrar só o caminho" ativo */
+#path-status {
+  position: absolute;
+  bottom: 46px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(90%, 560px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--surface2);
+  border: 1px solid var(--accent);
+  padding: 5px 8px 5px 12px;
+  border-radius: 20px;
+  box-shadow: var(--shadow-sm);
+  z-index: 5;
+}
+#path-status-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#path-include-connectors-btn {
+  flex-shrink: 0;
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--accent);
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+#path-include-connectors-btn:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+#path-status-clear {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease;
+}
+#path-status-clear:hover {
+  transform: scale(1.1);
+}
+
+/* Aviso: par de nós escolhidos sem caminho entre eles */
+#path-filter-warning {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(85%, 520px);
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: #fff;
+  background: #c1121f;
+  padding: 8px 16px;
+  border-radius: 10px;
+  box-shadow: var(--shadow-md);
+  z-index: 10;
+}
+
 /* ── Sidebar ────────────────────────────────── */
 #sidebar {
   background: var(--surface);
@@ -259,12 +379,111 @@ canvas {
 
 #logo-sub {
   font-family: 'Geist Mono', monospace;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 300;
   color: var(--text-muted);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   transition: color 0.3s;
+}
+
+#header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#more-options-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text-muted);
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  padding: 0;
+  flex-shrink: 0;
+}
+#more-options-btn:hover {
+  background: var(--surface3);
+  color: var(--text);
+}
+#more-options-btn[aria-expanded="true"] {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* Painel de "mais opções" — desliza da direita por cima do canvas */
+#more-options-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  z-index: 500;
+}
+#more-options-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#more-options-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 320px;
+  max-width: 90vw;
+  height: 100vh;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  display: flex;
+  flex-direction: column;
+}
+#more-options-overlay.open #more-options-panel {
+  transform: translateX(0);
+}
+
+#more-options-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#more-options-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.2s;
+}
+#more-options-close:hover {
+  background: var(--surface3);
+  color: var(--text);
+}
+
+#more-options-body {
+  flex: 1;
+  overflow-y: auto;
 }
 
 /* Theme toggle */
@@ -308,7 +527,7 @@ canvas {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -328,13 +547,20 @@ canvas {
 .section-label-num {
   font-family: 'Geist Mono', monospace;
   color: var(--accent);
-  font-size: 9px;
+  font-size: 11px;
   opacity: 0.7;
 }
 
 /* ── Phase 1 ────────────────────────────────── */
 #phase1-panel { display: block; }
 #phase2-panel { display: none; }
+
+/* ── Métricas inline — sempre visível, abaixo da captura de pares ── */
+#metrics-inline {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
 
 .field-group {
   margin-bottom: 14px;
@@ -349,7 +575,7 @@ canvas {
 
 .label-chip {
   font-family: 'Geist Mono', monospace;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -362,7 +588,7 @@ canvas {
 
 .label-optional {
   font-family: 'Geist Mono', monospace;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--text-muted);
   letter-spacing: 0.06em;
 }
@@ -374,7 +600,7 @@ input[type="text"] {
   border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0 12px;
-  font-size: 13px;
+  font-size: 15px;
   font-family: 'Geist Mono', monospace;
   font-weight: 400;
   color: var(--text);
@@ -396,7 +622,7 @@ input[type="text"]:focus {
   border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0 12px;
-  font-size: 13px;
+  font-size: 15px;
   font-family: 'Geist Mono', monospace;
   font-weight: 400;
   color: var(--text);
@@ -415,7 +641,7 @@ button {
   height: 36px;
   padding: 0 14px;
   border-radius: var(--radius-sm);
-  font-size: 12px;
+  font-size: 14px;
   font-family: 'Geist', sans-serif;
   font-weight: 500;
   letter-spacing: 0.03em;
@@ -487,13 +713,13 @@ button:active { transform: scale(0.98); }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .btn-stop {
   height: 26px !important;
   padding: 0 10px !important;
-  font-size: 9px !important;
+  font-size: 11px !important;
   font-weight: 600 !important;
   letter-spacing: 0.06em !important;
   color: var(--teto) !important;
@@ -510,12 +736,12 @@ button:active { transform: scale(0.98); }
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 #pair-counter {
   font-family: 'Geist Mono', monospace;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 400;
   color: var(--text-muted);
   white-space: nowrap;
@@ -543,7 +769,7 @@ button:active { transform: scale(0.98); }
   display: none;
   align-items: flex-start;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   padding: 9px 11px;
   background: var(--rel-soft);
   border: 1px solid var(--rel-mid);
@@ -555,7 +781,7 @@ button:active { transform: scale(0.98); }
   background: var(--rel);
   color: #fff;
   font-family: 'Geist Mono', monospace;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 500;
   padding: 2px 7px;
   border-radius: 4px;
@@ -567,7 +793,7 @@ button:active { transform: scale(0.98); }
 
 #already-connected-path {
   font-family: 'Geist Mono', monospace;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--rel);
   line-height: 1.5;
   word-break: break-word;
@@ -579,7 +805,7 @@ button:active { transform: scale(0.98); }
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   padding: 12px;
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -591,7 +817,7 @@ button:active { transform: scale(0.98); }
   flex: 1;
   padding: 6px 10px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
   font-family: 'Geist Mono', monospace;
   background: var(--meio-soft);
@@ -605,13 +831,13 @@ button:active { transform: scale(0.98); }
 
 .pair-arrow {
   color: var(--border2);
-  font-size: 14px;
+  font-size: 16px;
   flex-shrink: 0;
   transition: color 0.3s;
 }
 
 #input-meio {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 #input-meio.is-extra {
@@ -633,14 +859,14 @@ button:active { transform: scale(0.98); }
 }
 
 .btn-row-skip {
-  font-size: 11px !important;
+  font-size: 13px !important;
   padding: 0 12px !important;
 }
 
 .btn-restart {
   width: 100%;
   height: 30px !important;
-  font-size: 10px !important;
+  font-size: 12px !important;
   opacity: 0.6;
   letter-spacing: 0.04em !important;
 }
@@ -666,14 +892,14 @@ button:active { transform: scale(0.98); }
   border-radius: 50%;
   background: var(--rel);
   color: #fff;
-  font-size: 13px;
+  font-size: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .done-text {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--rel);
   letter-spacing: 0.02em;
@@ -701,7 +927,7 @@ button:active { transform: scale(0.98); }
 #complete-icon { font-size: 24px; line-height: 1; }
 
 #complete-title {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text);
   margin-bottom: 2px;
@@ -709,7 +935,7 @@ button:active { transform: scale(0.98); }
 }
 
 #complete-sub {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--text-muted);
   font-family: 'Geist Mono', monospace;
   line-height: 1.5;
@@ -757,7 +983,7 @@ button:active { transform: scale(0.98); }
   background: var(--piso);
   color: #fff;
   font-family: 'Geist Mono', monospace;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 500;
   padding: 3px 8px;
   border-radius: 4px;
@@ -767,7 +993,7 @@ button:active { transform: scale(0.98); }
 
 .finished-text {
   font-family: 'Geist Mono', monospace;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-muted);
   line-height: 1.4;
   transition: color 0.3s;
@@ -801,7 +1027,7 @@ button:active { transform: scale(0.98); }
 }
 
 .chevron {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-2);
   transition: transform 0.25s ease, color 0.3s;
   line-height: 1;
@@ -815,39 +1041,44 @@ button:active { transform: scale(0.98); }
   transform: rotate(-90deg);
 }
 
+/* Anima abrir/fechar sem precisar adivinhar uma altura fixa: o container
+   vira um grid de uma linha só, e o que anima é a fração dessa linha
+   (0fr = nada, 1fr = a altura real do conteúdo, calculada pelo navegador
+   a cada frame). .collapsible-inner é quem corta visualmente o conteúdo
+   enquanto a linha encolhe — min-height:0 é necessário porque grid/flex
+   não deixam um item encolher abaixo do próprio conteúdo por padrão. */
 .collapsible-content {
-  max-height: 400px;
+  display: grid;
+  grid-template-rows: 1fr;
   opacity: 1;
-  overflow: hidden;
-  transition: max-height 0.25s ease, opacity 0.2s ease;
+  transition: grid-template-rows 0.25s ease, opacity 0.2s ease;
 }
 
 .sidebar-collapsible.collapsed .collapsible-content {
-  max-height: 0;
+  grid-template-rows: 0fr;
   opacity: 0;
 }
 
-/* Seções com mais conteúdo que o teto padrão de 400px (ex: o painel de
-   métricas, com até 12 linhas) usam este teto maior em vez do genérico. */
-.collapsible-content.collapsible-content--tall {
-  max-height: 700px;
+.collapsible-inner {
+  overflow: hidden;
+  min-height: 0;
 }
 
 .legend-title {
   font-family: 'Geist Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--text);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   transition: color 0.3s;
 }
 
 .legend-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 7px 12px;
+  gap: 5px 12px;
 }
 
 .legend-item {
@@ -855,7 +1086,7 @@ button:active { transform: scale(0.98); }
   align-items: center;
   gap: 7px;
   font-family: 'Geist Mono', monospace;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-2);
   letter-spacing: 0.04em;
@@ -872,10 +1103,25 @@ button:active { transform: scale(0.98); }
   box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
 }
 
+/* Mesmo "slot" de ícone do .legend-dot, mas pra glifo de texto (■ ● ▲ ◆)
+   em vez de cor de fundo — garante que a linha de base do glifo fique no
+   mesmo centro vertical do quadradinho colorido das outras linhas. */
+.legend-glyph {
+  width: 10px;
+  height: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-2);
+}
+
 /* ── Auditoria da tag de caminho ─────────────── */
 .audit-empty {
   font-family: 'Geist Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-2);
   letter-spacing: 0.02em;
   line-height: 1.5;
@@ -886,7 +1132,7 @@ button:active { transform: scale(0.98); }
   align-items: center;
   gap: 6px;
   font-family: 'Geist Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-2);
   margin-bottom: 4px;
   transition: color 0.3s;
@@ -917,7 +1163,7 @@ button:active { transform: scale(0.98); }
 .audit-list {
   display: block;
   margin-top: 6px;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .audit-list ul {
@@ -937,7 +1183,7 @@ button:active { transform: scale(0.98); }
 
 #export-hint {
   font-family: 'Geist Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-2);
   letter-spacing: 0.02em;
   line-height: 1.6;
@@ -947,7 +1193,7 @@ button:active { transform: scale(0.98); }
 
 #export-hint code {
   font-family: 'Geist Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -961,7 +1207,7 @@ button:active { transform: scale(0.98); }
 
 #import-hint {
   font-family: 'Geist Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-2);
   letter-spacing: 0.02em;
   line-height: 1.6;
@@ -975,7 +1221,7 @@ button:active { transform: scale(0.98); }
 
 #metrics-hint {
   font-family: 'Geist Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-2);
   letter-spacing: 0.02em;
   line-height: 1.6;
@@ -985,7 +1231,7 @@ button:active { transform: scale(0.98); }
 
 #metrics-hint code {
   font-family: 'Geist Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -1003,7 +1249,7 @@ button:active { transform: scale(0.98); }
 
 .metrics-error {
   font-family: 'Geist Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   color: #c1121f;
   letter-spacing: 0.02em;
   line-height: 1.6;
@@ -1012,7 +1258,7 @@ button:active { transform: scale(0.98); }
 /* Bloco da IA */
  
 #ai-block {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--meio-mid);
   background: var(--meio-soft);
@@ -1042,7 +1288,7 @@ button:active { transform: scale(0.98); }
  
 #ai-idle-text {
   font-family: 'Geist Mono', monospace;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.4;
 }
  
@@ -1053,7 +1299,7 @@ button:active { transform: scale(0.98); }
   gap: 9px;
   color: var(--text-muted);
   font-family: 'Geist Mono', monospace;
-  font-size: 10px;
+  font-size: 12px;
 }
  
 .ai-spinner {
@@ -1092,7 +1338,7 @@ button:active { transform: scale(0.98); }
  
 #ai-result-label {
   font-family: 'Geist Mono', monospace;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1102,7 +1348,7 @@ button:active { transform: scale(0.98); }
 #ai-relation-badge {
   margin-left: auto;
   font-family: 'Geist Mono', monospace;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.08em;
   padding: 2px 8px;
@@ -1123,7 +1369,7 @@ button:active { transform: scale(0.98); }
 }
  
 #ai-result-text {
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.65;
   color: var(--text);
   margin: 0;
@@ -1137,14 +1383,14 @@ button:active { transform: scale(0.98); }
   align-items: center;
   gap: 10px;
   font-family: 'Geist Mono', monospace;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--teto);
 }
  
 #ai-retry-btn {
   height: 24px !important;
   padding: 0 10px !important;
-  font-size: 9px !important;
+  font-size: 11px !important;
   font-weight: 500 !important;
   letter-spacing: 0.06em !important;
   color: var(--teto) !important;
@@ -1161,11 +1407,11 @@ button:active { transform: scale(0.98); }
 #ai-hint {
   display: none;
   font-family: 'Geist Mono', monospace;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--meio);
   letter-spacing: 0.04em;
   line-height: 1.5;
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   padding: 0 2px;
   opacity: 0.8;
 }

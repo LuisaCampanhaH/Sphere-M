@@ -141,11 +141,11 @@ function _fecharRodadaStats() {
   });
 }
 
-const GROUP_COLORS = {   
-  teto: { fill: '#fdeee8', stroke: '#d4450c', text: '#7a2506' },   
-  piso: { fill: '#e8effe', stroke: '#1d5bbf', text: '#0e3275' },   
-  relacionado: { fill: '#e8f7ee', stroke: '#1a7a3f', text: '#0d4422' },   
-  meio: { fill: '#f3eafd', stroke: '#7c22d4', text: '#4a0e87' }
+const GROUP_COLORS = {
+  teto: { fill: '#f3cebf', stroke: '#d13f05', text: '#7b280a' },
+  piso: { fill: '#c0d0f2', stroke: '#0c51c0', text: '#0d3277' },
+  relacionado: { fill: '#c0edd2', stroke: '#0d823a', text: '#0a5c29' },
+  meio: { fill: '#dac2f5', stroke: '#710dd3', text: '#4c0e8b' }
 };
 
 function findNode(label) {
@@ -167,15 +167,254 @@ function createNode(label, group, x, y) {
     highlight: false, pulse: 0,     
     linkedToCeiling: false,     
     linkedToFloor: false,     
-    tagNatureza: null,       
-    tagCaminho: null,        
-    tagCaminhoManual: false,    
-  };   
-  nodes.push(node);   
-  return node; 
+    tagNatureza: null,
+    tagCaminho: null,
+    tagCaminhoManual: false,
+    // Filtro visual (Alt+clique) — nunca lido por buildSessionExport(),
+    // importSessionFromObject(), auditTags() ou qualquer coisa que vá pro
+    // Python: some do desenho/física/clique, mas o nó continua no grafo.
+    hidden: false,
+    // true só quando `hidden` foi ligado pela poda automática (não por
+    // Alt+clique direto) — usado só pro contador e pra saber o que a poda
+    // pode desfazer no próximo recálculo.
+    podado: false,
+  };
+  nodes.push(node);
+  return node;
 }
 
-function tipoRelacaoPorNatureza(nodeA, nodeB) {   
+// Filtro visual de nós (Alt+clique pra esconder, botão "mostrar todos" pra
+// reverter). Só mexe em nd.hidden — nunca em nodes/edges/E/G/seenPairs —
+// então buildSessionExport(), importSessionFromObject() e auditTags()
+// continuam vendo o grafo completo, sem exceção.
+function esconderNo(node) {
+  node.hidden = true;
+  node.podado = false; // escondido por mim, não pela poda
+  if (selected === node) selected = null;
+  if (dragging === node) dragging = null;
+  const idx = ctrlSelectedNodes.indexOf(node);
+  if (idx > -1) ctrlSelectedNodes.splice(idx, 1);
+  podarNosDoMeio();
+}
+
+// Alt+clique num nó já escondido reexibe só ele. Se ele tinha sido
+// escondido manualmente, a poda recalcula sem ele no recálculo seguinte —
+// o que só estava podado por causa dele volta junto (grau sobe de novo).
+// Se ele mesmo era um nó podado, o recálculo tende a escondê-lo de novo na
+// mesma hora (nada mudou nos vizinhos dele) — ver explicação em
+// podarNosDoMeio().
+function reexibirNo(node) {
+  node.hidden = false;
+  node.podado = false;
+  podarNosDoMeio();
+}
+
+// Poda em cascata: some com nós do meio (nunca teto/piso/relacionado) que
+// ficaram com grau ≤1 considerando só arestas entre nós visíveis — inclui
+// grau 0 de propósito (nó do meio sem nenhuma ligação visível não passa
+// informação nenhuma, ainda menos que um com 1 ligação).
+//
+// Recalcula do zero a cada chamada: primeiro desfaz toda poda anterior,
+// depois refaz com o conjunto atual de nós escondidos manualmente. Isso
+// evita ter que rastrear "quem foi podado por causa de quem" — se um nó
+// escondido manualmente volta a aparecer, o que só estava podado por causa
+// dele volta sozinho no recálculo, porque o grau dele sobe de novo.
+//
+// Não roda com seleção direta ativa (pathSelectedNodes) — nesse modo a
+// visibilidade já é 100% controlada pela seleção; poda por grau não se
+// aplica em cima disso.
+function podarNosDoMeio() {
+  if (pathSelectedNodes.length > 0) {
+    atualizarBotaoEscondidos();
+    draw();
+    return;
+  }
+  nodes.forEach(nd => {
+    if (nd.podado) { nd.hidden = false; nd.podado = false; }
+  });
+
+  const vizinhos = new Map(nodes.map(nd => [nd.id, []]));
+  edges.forEach(e => {
+    vizinhos.get(e.from)?.push(e.to);
+    vizinhos.get(e.to)?.push(e.from);
+  });
+
+  let mudou = true;
+  while (mudou) {
+    mudou = false;
+    for (const nd of nodes) {
+      if (nd.hidden || nd.group !== 'meio') continue;
+      const grauVisivel = vizinhos.get(nd.id).filter(id => !getNodeById(id).hidden).length;
+      if (grauVisivel <= 1) {
+        nd.hidden = true;
+        nd.podado = true;
+        mudou = true;
+      }
+    }
+  }
+  atualizarBotaoEscondidos();
+  draw();
+}
+
+function contarNosEscondidos() {
+  return nodes.filter(nd => nd.hidden).length;
+}
+
+function mostrarTodosOsNos() {
+  nodes.forEach(nd => { nd.hidden = false; nd.podado = false; });
+  pathSelectedNodes = [];
+  avisoFiltroCaminho(null);
+  atualizarStatusCaminho();
+  atualizarBotaoEscondidos();
+  draw();
+}
+
+function atualizarBotaoEscondidos() {
+  const btn = document.getElementById('show-hidden-btn');
+  const count = document.getElementById('hidden-count');
+  if (!btn || !count) return;
+  const manuais = nodes.filter(nd => nd.hidden && !nd.podado).length;
+  const podados = nodes.filter(nd => nd.hidden && nd.podado).length;
+  btn.style.display = (manuais + podados) > 0 ? 'flex' : 'none';
+  count.textContent = podados > 0
+    ? `${manuais} escondido${manuais === 1 ? '' : 's'}, ${podados} podado${podados === 1 ? '' : 's'}`
+    : `${manuais}`;
+}
+
+// ── Seleção direta (Shift+clique, em ordem, em 1+ nós) ──
+// Mostra só os nós escolhidos e as arestas entre eles (subgrafo induzido).
+// Não calcula caminho — isso é opcional, via o botão "incluir nós que
+// ligam" (reaproveita caminhoMaisCurto sob demanda). Reaproveita nd.hidden
+// — mesma garantia de antes: só visual, nunca toca em
+// nodes/edges/E/G/seenPairs, então métricas/exportação/importação
+// continuam vendo o grafo completo.
+let pathSelectedNodes = [];
+
+function caminhoMaisCurto(startId, endId) {
+  if (startId === endId) return [startId];
+  // Adjacência não-direcionada (a busca ignora o sentido da aresta).
+  // Vizinhos sempre ordenados por id crescente antes de explorar — é isso
+  // que torna o desempate determinístico: havendo dois caminhos do mesmo
+  // tamanho, o BFS sempre "trava" no mesmo primeiro encontrado, porque
+  // sempre visita os vizinhos na mesma ordem pro mesmo grafo.
+  const vizinhos = new Map();
+  const addViz = (a, b) => {
+    if (!vizinhos.has(a)) vizinhos.set(a, []);
+    vizinhos.get(a).push(b);
+  };
+  edges.forEach(e => { addViz(e.from, e.to); addViz(e.to, e.from); });
+  vizinhos.forEach(lista => lista.sort((a, b) => a - b));
+
+  const visitado = new Set([startId]);
+  const anterior = new Map();
+  const fila = [startId];
+  while (fila.length) {
+    const atual = fila.shift();
+    if (atual === endId) break;
+    for (const viz of (vizinhos.get(atual) || [])) {
+      if (!visitado.has(viz)) {
+        visitado.add(viz);
+        anterior.set(viz, atual);
+        fila.push(viz);
+      }
+    }
+  }
+  if (!visitado.has(endId)) return null;
+  const caminho = [endId];
+  let cursor = endId;
+  while (cursor !== startId) {
+    cursor = anterior.get(cursor);
+    caminho.push(cursor);
+  }
+  caminho.reverse();
+  return caminho;
+}
+
+function avisoFiltroCaminho(texto) {
+  const el = document.getElementById('path-filter-warning');
+  if (!el) return;
+  el.textContent = texto || '';
+  el.style.display = texto ? 'flex' : 'none';
+}
+
+// Conexões do subgrafo induzido: arestas com as DUAS pontas selecionadas.
+function contarConexoesVisiveis(idsSet) {
+  return edges.filter(e => idsSet.has(e.from) && idsSet.has(e.to)).length;
+}
+
+function atualizarStatusCaminho() {
+  const bar = document.getElementById('path-status');
+  const texto = document.getElementById('path-status-text');
+  const btnIncluir = document.getElementById('path-include-connectors-btn');
+  if (!bar || !texto) return;
+  if (!pathSelectedNodes.length) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  const idsSet = new Set(pathSelectedNodes.map(nd => nd.id));
+  const nSel = pathSelectedNodes.length;
+  const nCon = contarConexoesVisiveis(idsSet);
+  const txtSel = nSel === 1 ? '1 selecionado' : `${nSel} selecionados`;
+  const txtCon = nCon === 1 ? '1 conexão visível' : `${nCon} conexões visíveis`;
+  texto.textContent = `${txtSel}, ${txtCon}`;
+  if (btnIncluir) btnIncluir.style.display = nSel >= 2 ? 'inline-flex' : 'none';
+}
+
+// Mostra só os nós selecionados (e as arestas entre eles) — sem calcular
+// caminho nenhum. "Incluir nós que ligam" (abaixo) é o atalho opcional que
+// usa caminhoMaisCurto pra completar a seleção sob demanda.
+function aplicarSelecaoDireta() {
+  if (!pathSelectedNodes.length) {
+    nodes.forEach(nd => { nd.hidden = false; nd.podado = false; });
+    avisoFiltroCaminho(null);
+    atualizarBotaoEscondidos();
+    draw();
+    return;
+  }
+  // Seleção direta manda: nenhum nó fica "podado" enquanto ela estiver
+  // ativa (ver podarNosDoMeio) — limpa a flag pra não sobrar estado velho
+  // num nó que a seleção reexibiu.
+  const idsSet = new Set(pathSelectedNodes.map(nd => nd.id));
+  nodes.forEach(nd => { nd.hidden = !idsSet.has(nd.id); if (!nd.hidden) nd.podado = false; });
+  if (pathSelectedNodes.length >= 2 && contarConexoesVisiveis(idsSet) === 0) {
+    avisoFiltroCaminho('⚠ nenhuma conexão direta entre os nós selecionados — use "incluir nós que ligam".');
+  } else {
+    avisoFiltroCaminho(null);
+  }
+  atualizarBotaoEscondidos();
+  draw();
+}
+
+// Atalho opcional: acrescenta à seleção os nós do caminho mais curto entre
+// cada par consecutivo (mesma busca de antes, sob demanda). Tudo ou nada —
+// se algum par não tiver caminho, nada é acrescentado.
+function incluirNosQueLigam() {
+  if (pathSelectedNodes.length < 2) return;
+  const idsAcrescentar = [];
+  for (let i = 0; i < pathSelectedNodes.length - 1; i++) {
+    const a = pathSelectedNodes[i], b = pathSelectedNodes[i + 1];
+    const trecho = caminhoMaisCurto(a.id, b.id);
+    if (!trecho) {
+      avisoFiltroCaminho(`⚠ Não há caminho entre "${a.label}" e "${b.label}" — nada foi acrescentado.`);
+      return;
+    }
+    trecho.forEach(id => { if (!idsAcrescentar.includes(id)) idsAcrescentar.push(id); });
+  }
+  idsAcrescentar.forEach(id => {
+    if (!pathSelectedNodes.some(nd => nd.id === id)) pathSelectedNodes.push(getNodeById(id));
+  });
+  atualizarStatusCaminho();
+  aplicarSelecaoDireta();
+}
+
+function limparSelecaoCaminho() {
+  pathSelectedNodes = [];
+  atualizarStatusCaminho();
+  mostrarTodosOsNos();
+}
+
+function tipoRelacaoPorNatureza(nodeA, nodeB) {
   const a = nodeA?.tagNatureza, b = nodeB?.tagNatureza;   
   if (!a || !b) return null;   
   if (a === 'Classe' && b === 'Classe') return 'é-um';   
@@ -344,12 +583,14 @@ function auditTags() {
   return { contagem, desequilibrio, ambosPorNatureza }; 
 }
 
-function renderAuditPanel() {   
-  const el = document.getElementById('tag-audit-panel');   
-  if (!el) return;   
-  const { contagem, desequilibrio, ambosPorNatureza } = auditTags();   
-  const totalMarcados = contagem.positivo + contagem.negativo + contagem.ambos;   
-  if (!totalMarcados) {     
+function renderAuditPanel() {
+  const el = document.getElementById('tag-audit-panel');
+  if (!el) return;
+  const { contagem, desequilibrio, ambosPorNatureza } = auditTags();
+  const totalMarcados = contagem.positivo + contagem.negativo + contagem.ambos;
+  const contadorEl = document.getElementById('tag-audit-count');
+  if (contadorEl) contadorEl.textContent = totalMarcados ? ` · ${totalMarcados}` : '';
+  if (!totalMarcados) {
     el.innerHTML = `<div class="audit-empty">nenhum nó com tag de caminho ainda (duplo clique num nó pra marcar)</div>`;     
     return;   
   }
@@ -400,37 +641,42 @@ const GROUP_Y_K = { teto: 0.06, piso: 0.06, relacionado: 0.04, meio: 0.035 };
 const GROUP_X_K = { teto: 0.02, piso: 0.02, relacionado: 0.02, meio: 0.0 }; 
 let simSteps = 0; 
 
-function simulateStep() {   
-  const n = nodes.length;   
-  if (!n) return;   
-  nodes.forEach(nd => { nd.fx = 0; nd.fy = 0; });   
-  for (let i = 0; i < n; i++) {     
-    for (let j = i + 1; j < n; j++) {       
-      const a = nodes[i], b = nodes[j];       
-      const dx = b.x - a.x, dy = b.y - a.y;       
-      const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;       
-      const force = REPULSION / (dist * dist);       
-      const fx = (dx / dist) * force, fy = (dy / dist) * force;       
-      a.fx -= fx; a.fy -= fy; b.fx += fx; b.fy += fy;     
-    }   
+function simulateStep() {
+  // Nós escondidos (filtro visual, Alt+clique) ficam de fora da física
+  // inteira — não empurram os visíveis, e ficam congelados na posição
+  // onde estavam ao sumir.
+  const visiveis = nodes.filter(nd => !nd.hidden);
+  const n = visiveis.length;
+  if (!n) return;
+  visiveis.forEach(nd => { nd.fx = 0; nd.fy = 0; });
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const a = visiveis[i], b = visiveis[j];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
+      const force = REPULSION / (dist * dist);
+      const fx = (dx / dist) * force, fy = (dy / dist) * force;
+      a.fx -= fx; a.fy -= fy; b.fx += fx; b.fy += fy;
+    }
   }
   edges.forEach(e => {
     const a = getNodeById(e.from), b = getNodeById(e.to);
     if (!a || !b) return;
+    if (a.hidden || b.hidden) return;
     const dx = b.x - a.x, dy = b.y - a.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
     const force = SPRING_K * (dist - SPRING_LEN);
-    const fx = (dx / dist) * force, fy = (dy / dist) * force;     
-    a.fx += fx; a.fy += fy; b.fx -= fx; b.fy -= fy;   
-  });   
-  nodes.forEach(nd => {     
-    const targetY = (GROUP_TARGET_Y[nd.group] ?? 0.5) * H;     
-    const yK = GROUP_Y_K[nd.group] ?? CENTER_K;     
-    nd.fy += (targetY - nd.y) * yK;     
-    const xK = GROUP_X_K[nd.group] ?? 0;     
-    nd.fx += (W / 2 - nd.x) * xK;   
-  });   
-  const meioNodes = nodes.filter(nd => nd.group === 'meio');   
+    const fx = (dx / dist) * force, fy = (dy / dist) * force;
+    a.fx += fx; a.fy += fy; b.fx -= fx; b.fy -= fy;
+  });
+  visiveis.forEach(nd => {
+    const targetY = (GROUP_TARGET_Y[nd.group] ?? 0.5) * H;
+    const yK = GROUP_Y_K[nd.group] ?? CENTER_K;
+    nd.fy += (targetY - nd.y) * yK;
+    const xK = GROUP_X_K[nd.group] ?? 0;
+    nd.fx += (W / 2 - nd.x) * xK;
+  });
+  const meioNodes = visiveis.filter(nd => nd.group === 'meio');
   if (meioNodes.length > 1) {     
     const sorted = [...meioNodes].sort((a, b) => a.id - b.id);     
     const spacing = Math.min(140, (W * 0.6) / sorted.length);     
@@ -442,14 +688,14 @@ function simulateStep() {
   } else if (meioNodes.length === 1) {     
     meioNodes[0].fx += (W / 2 - meioNodes[0].x) * 0.025;   
   }
-  nodes.forEach(nd => {     
-    if (dragging && dragging.id === nd.id) return;     
-    if (nd.fixed) return;     
-    nd.vx = (nd.vx + nd.fx) * DAMPING;     
-    nd.vy = (nd.vy + nd.fy) * DAMPING;     
-    nd.x = Math.max(nd.w / 2 + 4, Math.min(W - nd.w / 2 - 4, nd.x + nd.vx));     
-    nd.y = Math.max(nd.h / 2 + 4, Math.min(H - nd.h / 2 - 4, nd.y + nd.vy));   
-  }); 
+  visiveis.forEach(nd => {
+    if (dragging && dragging.id === nd.id) return;
+    if (nd.fixed) return;
+    nd.vx = (nd.vx + nd.fx) * DAMPING;
+    nd.vy = (nd.vy + nd.fy) * DAMPING;
+    nd.x = Math.max(nd.w / 2 + 4, Math.min(W - nd.w / 2 - 4, nd.x + nd.vx));
+    nd.y = Math.max(nd.h / 2 + 4, Math.min(H - nd.h / 2 - 4, nd.y + nd.vy));
+  });
 }
 
 function startSim(steps = 300) {   
@@ -530,6 +776,7 @@ function draw() {
   edges.forEach(e => {
     const a = getNodeById(e.from), b = getNodeById(e.to);
     if (!a || !b) return;
+    if (a.hidden || b.hidden) return;
     ctx.save();
     const tagA = a.tagCaminho, tagB = b.tagCaminho;
     let edgeColor = corArestaPadrao;
@@ -588,13 +835,14 @@ function draw() {
     }     
     ctx.restore();   
   });   
-  nodes.forEach(nd => {     
-    const c   = GROUP_COLORS[nd.group] || GROUP_COLORS.meio;     
-    const isSel = selected && selected.id === nd.id;     
-    const nx  = nd.x - nd.w / 2;     
-    const ny  = nd.y - nd.h / 2;     
-    const nw  = nd.w;     
-    const nh  = nd.h;     
+  nodes.forEach(nd => {
+    if (nd.hidden) return;
+    const c   = GROUP_COLORS[nd.group] || GROUP_COLORS.meio;
+    const isSel = selected && selected.id === nd.id;
+    const nx  = nd.x - nd.w / 2;
+    const ny  = nd.y - nd.h / 2;
+    const nw  = nd.w;
+    const nh  = nd.h;
     if (nd.highlight) {       
       const pulse = Math.sin(nd.pulse || 0);       
       const ring  = 5 + 3 * pulse;       
@@ -606,15 +854,31 @@ function draw() {
       ctx.stroke();       
       ctx.restore();     
     }          
-    if (ctrlSelectedNodes.includes(nd)) {       
-      ctx.save();       
-      roundRect(nx - 4, ny - 4, nw + 8, nh + 8, NODE_R + 4);       
+    if (ctrlSelectedNodes.includes(nd)) {
+      ctx.save();
+      roundRect(nx - 4, ny - 4, nw + 8, nh + 8, NODE_R + 4);
       ctx.strokeStyle = corAccent;
-      ctx.setLineDash([4, 4]);       
-      ctx.lineWidth = 1.5;       
-      ctx.stroke();       
-      ctx.restore();     
-    }     
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
+    }
+    const ordemCaminho = pathSelectedNodes.indexOf(nd);
+    if (ordemCaminho > -1) {
+      ctx.save();
+      roundRect(nx - 4, ny - 4, nw + 8, nh + 8, NODE_R + 4);
+      ctx.strokeStyle = corAccent;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.restore();
+      ctx.save();
+      ctx.font = '700 9px "Geist Mono", ui-monospace, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = corAccent;
+      ctx.fillText(String(ordemCaminho + 1), nd.x, ny - 8);
+      ctx.restore();
+    }
     ctx.save();     
     ctx.shadowColor   = isSel ? c.stroke : 'rgba(0,0,0,0.15)';     
     ctx.shadowBlur    = isSel ? 18 : 7;     
@@ -720,10 +984,11 @@ document.getElementById('start-btn').addEventListener('click', () => {
     });     
     return;   
   }
-  nodes = []; edges = []; selected = null; nextId = 0;   
-  E = new Set(); G = new Set(); tempG = new Set();   
-  seenPairs = new Set(); pairIdx = 0; round = 1; finished = false;   
-  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }   
+  nodes = []; edges = []; selected = null; nextId = 0;
+  E = new Set(); G = new Set(); tempG = new Set();
+  seenPairs = new Set(); pairIdx = 0; round = 1; finished = false;
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+  atualizarBotaoEscondidos();
   ctrlSelectedNodes = [];   
   tetos.forEach(l => {     
     const n = createNode(l, 'teto');     
@@ -1232,27 +1497,57 @@ function resetAll() {
   el.stopBtn.disabled = false;   
   el.inputTeto.value = '';   
   el.inputPiso.value = '';   
-  el.inputRel.value = '';   
-  renderAuditPanel();   
-  draw(); 
+  el.inputRel.value = '';
+  renderAuditPanel();
+  atualizarBotaoEscondidos();
+  draw();
 }
 
-document.getElementById('reset-btn').addEventListener('click', resetAll); 
-document.getElementById('reset-btn2').addEventListener('click', resetAll); 
+document.getElementById('reset-btn').addEventListener('click', resetAll);
+document.getElementById('reset-btn2').addEventListener('click', resetAll);
 
-(function () {   
-  const sections = [     
+// ── Painel de "mais opções" (legenda, auditoria, ponte com Python, métricas) ──
+(function () {
+  const btn = document.getElementById('more-options-btn');
+  const overlay = document.getElementById('more-options-overlay');
+  const panel = document.getElementById('more-options-panel');
+  const closeBtn = document.getElementById('more-options-close');
+  if (!btn || !overlay || !panel) return;
+
+  function abrir() {
+    overlay.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+  }
+  function fechar() {
+    overlay.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+  }
+
+  btn.addEventListener('click', () => {
+    overlay.classList.contains('open') ? fechar() : abrir();
+  });
+  closeBtn?.addEventListener('click', fechar);
+  overlay.addEventListener('mousedown', e => {
+    if (!panel.contains(e.target)) fechar();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && overlay.classList.contains('open')) fechar();
+  });
+})();
+
+(function () {
+  const sections = [
     { id: 'legend', toggleId: 'legend-toggle', storageKey: 'sphere-legend-collapsed' },     
     { id: 'tag-audit', toggleId: 'tag-audit-toggle', storageKey: 'sphere-tag-audit-collapsed' },     
     { id: 'export-section', toggleId: 'export-toggle', storageKey: 'sphere-export-collapsed' },
-    { id: 'metrics-section', toggleId: 'metrics-toggle', storageKey: 'sphere-metrics-collapsed' },
   ];
   sections.forEach(({ id, toggleId, storageKey }) => {     
     const section = document.getElementById(id);     
     const toggleBtn = document.getElementById(toggleId);     
-    if (!section || !toggleBtn) return;     
-    const collapsed = localStorage.getItem(storageKey) === '1';     
-    if (collapsed) {       
+    if (!section || !toggleBtn) return;
+    // Recolhida por padrão (só fica aberta se o usuário já expandiu antes).
+    const collapsed = localStorage.getItem(storageKey) !== '0';
+    if (collapsed) {
       section.classList.add('collapsed');       
       toggleBtn.setAttribute('aria-expanded', 'false');     
     }     
@@ -1264,15 +1559,16 @@ document.getElementById('reset-btn2').addEventListener('click', resetAll);
   }); 
 })(); 
 
-(function () {   
-  const btn = document.getElementById('toggle-edge-labels-btn');   
-  const icon = document.getElementById('toggle-edge-labels-icon');   
-  function applyState() {     
-    if (btn) btn.setAttribute('aria-pressed', showEdgeLabels ? 'true' : 'false');     
-    if (icon) icon.textContent = showEdgeLabels ? 'Ocultar' : 'Mostrar';     
-    if (btn) btn.title = showEdgeLabels       
-      ? 'Ocultar rótulos das relações'       
-      : 'Mostrar rótulos das relações';   
+(function () {
+  const btn = document.getElementById('toggle-edge-labels-btn');
+  // O ícone fica fixo (🏷️, definido no HTML) — só o estado visual (opacidade,
+  // via aria-pressed no CSS) e o title mudam. Antes o texto "Mostrar"/"Ocultar"
+  // substituía o ícone e estourava a largura fixa do círculo do botão.
+  function applyState() {
+    if (btn) btn.setAttribute('aria-pressed', showEdgeLabels ? 'true' : 'false');
+    if (btn) btn.title = showEdgeLabels
+      ? 'Ocultar rótulos das relações'
+      : 'Mostrar rótulos das relações';
   }
   function toggleEdgeLabels() {     
     showEdgeLabels = !showEdgeLabels;     
@@ -1290,6 +1586,10 @@ document.getElementById('reset-view-btn')?.addEventListener('click', () => {
   camScale = 1;
   draw();
 });
+
+document.getElementById('show-hidden-btn')?.addEventListener('click', mostrarTodosOsNos);
+document.getElementById('path-status-clear')?.addEventListener('click', limparSelecaoCaminho);
+document.getElementById('path-include-connectors-btn')?.addEventListener('click', incluirNosQueLigam);
 
 function buildSessionExport() {
   return {     
@@ -1420,9 +1720,10 @@ function resetImportState() {
   historicoPorRodada = [];
   if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
   sessionId++;
+  atualizarBotaoEscondidos();
 }
 
-function importSessionFromObject(raw) {   
+function importSessionFromObject(raw) {
   const data = (raw && raw.sphereM) ? raw.sphereM : raw;   
   if (!data || !Array.isArray(data.nodes)) {     
     alert('JSON inválido: não encontrei "nodes" no formato esperado (sphereM.nodes).');     
@@ -1578,12 +1879,13 @@ el.importJsonInput.addEventListener('change', (e) => {
 })();
 
 // Mouse (Nova lógica do Ctrl + Click)
-function nodeAt(x, y) {   
-  return nodes.slice().reverse().find(nd => {     
-    const hw = (nd.w || 64) / 2;     
-    const hh = (nd.h || 30) / 2;     
-    return Math.abs(x - nd.x) <= hw && Math.abs(y - nd.y) <= hh;   
-  }); 
+function nodeAt(x, y, includeHidden) {
+  return nodes.slice().reverse().find(nd => {
+    if (nd.hidden && !includeHidden) return false;
+    const hw = (nd.w || 64) / 2;
+    const hh = (nd.h || 30) / 2;
+    return Math.abs(x - nd.x) <= hw && Math.abs(y - nd.y) <= hh;
+  });
 }
 
 function clientToCanvas(e) {
@@ -1646,9 +1948,39 @@ canvas.addEventListener('mousedown', e => {
     return;
   }
   const p = getPos(e), node = nodeAt(p.x, p.y);
+  if (e.altKey) {
+    // Nó escondido não é desenhado, então o clique também precisa
+    // considerar nós escondidos aqui — sem isso não dá pra reexibir um só.
+    const alvo = node || nodeAt(p.x, p.y, true);
+    if (alvo) {
+      if (alvo.hidden) reexibirNo(alvo);
+      else esconderNo(alvo);
+    }
+    return;
+  }
+  if (e.shiftKey) {
+    // Depois do 1º nó, a seleção já escondeu tudo que não está nela —
+    // inclusive o próximo nó que o usuário ainda quer escolher. Por isso,
+    // aqui (e só aqui) a busca também considera nós escondidos: sem isso,
+    // seria impossível selecionar um nó que não estivesse visível.
+    const alvo = node || nodeAt(p.x, p.y, true);
+    if (alvo) {
+      const idxCaminho = pathSelectedNodes.indexOf(alvo);
+      if (idxCaminho > -1) {
+        // Clicar de novo num nó já escolhido "rebobina" a seleção até ele —
+        // dá pra corrigir sem precisar limpar tudo e recomeçar.
+        pathSelectedNodes.splice(idxCaminho);
+      } else {
+        pathSelectedNodes.push(alvo);
+      }
+      atualizarStatusCaminho();
+      aplicarSelecaoDireta();
+    }
+    return;
+  }
   selected = node || null;
   if (node) {
-    if (e.ctrlKey || e.metaKey) {       
+    if (e.ctrlKey || e.metaKey) {
       // Se clicou no nó segurando Ctrl
       const idx = ctrlSelectedNodes.indexOf(node);       
       if (idx > -1) {         
@@ -1760,9 +2092,10 @@ function edgeAt(x, y) {
   edges.forEach(e => {
     const a = getNodeById(e.from), b = getNodeById(e.to);
     if (!a || !b) return;
+    if (a.hidden || b.hidden) return;
     const d = distToSegment(x, y, a.x, a.y, b.x, b.y);
-    if (d < bestDist) { bestDist = d; best = e; }   
-  });   
+    if (d < bestDist) { bestDist = d; best = e; }
+  });
   return best; 
 }
 

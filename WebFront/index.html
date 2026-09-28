@@ -300,10 +300,30 @@
             <div id="export-content" class="collapsible-content">
               <div class="collapsible-inner">
                 <button id="export-json-btn" class="btn-ghost" style="width:100%">⇩ Exportar sessão (JSON)</button>
-                <p id="export-hint">gera um .json com nós, arestas e tags — leia com <code>Python code/importar_grafo.py</code> pra calcular raio, densidade, eficiência e produtividade, ou gerar a visualização pyvis.</p>
+                <div id="export-hint-section" class="sidebar-collapsible hint-collapsible">
+                  <button id="export-hint-toggle" class="collapsible-toggle" type="button" aria-expanded="false" aria-controls="export-hint-content">
+                    <span class="hint-toggle-label">como funciona</span>
+                    <span class="chevron">▾</span>
+                  </button>
+                  <div id="export-hint-content" class="collapsible-content">
+                    <div class="collapsible-inner">
+                      <p id="export-hint">gera um .json com nós, arestas e tags — leia com <code>Python code/importar_grafo.py</code> pra calcular raio, densidade, eficiência e produtividade, ou gerar a visualização pyvis.</p>
+                    </div>
+                  </div>
+                </div>
                 <button id="import-json-btn" class="btn-ghost" style="width:100%">⇧ Importar sessão (JSON)</button>
                 <input type="file" id="import-json-input" accept="application/json,.json" hidden />
-                <p id="import-hint">carrega um .json exportado daqui (ou gerado pelo mesmo formato) de volta pro canvas — também dá pra arrastar o arquivo direto pro grafo.</p>
+                <div id="import-hint-section" class="sidebar-collapsible hint-collapsible">
+                  <button id="import-hint-toggle" class="collapsible-toggle" type="button" aria-expanded="false" aria-controls="import-hint-content">
+                    <span class="hint-toggle-label">como funciona</span>
+                    <span class="chevron">▾</span>
+                  </button>
+                  <div id="import-hint-content" class="collapsible-content">
+                    <div class="collapsible-inner">
+                      <p id="import-hint">carrega um .json exportado daqui (ou gerado pelo mesmo formato) de volta pro canvas — também dá pra arrastar o arquivo direto pro grafo.</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

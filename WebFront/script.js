@@ -1046,40 +1046,102 @@ let _aiLastTipoAof = null;
 const TIPOS_AOF = ['é-um', 'é-parte-de', 'é-composto-por', 'é-uma-variação-de', 'é-um-atributo-de', 'é-um-componente-de', 'é-um-elemento-de', 'é-caracterizado-por'];
 const DOMAIN_NOTES = `- "Natal", "pré-natal" e "pós-natal": aqui SEMPRE se referem ao contexto de mortalidade/natalidade (gravidez, parto, período neonatal) NUNCA ao feriado de Natal (25 de dezembro). Trate esses termos exclusivamente como fases do ciclo gestacional/perinatal, mesmo que a palavra "Natal" sozinha remeta ao feriado no uso cotidiano.`; 
 
+async function fetchComRetry(url, options, tentativas = 4) {
+  for (let i = 0; i < tentativas; i++) {
+    const resp = await fetch(url, options);
+    if (resp.status !== 429) return resp;
+
+    const retryAfter = Number(resp.headers.get('retry-after'));
+    const espera = retryAfter > 0 ? retryAfter * 1000 : 3000 * Math.pow(2, i);
+    console.warn(`429: tentando de novo em ${espera / 1000}s (tentativa ${i + 1}/${tentativas})`);
+    await new Promise(r => setTimeout(r, espera));
+  }
+  return fetch(url, options);
+}
+
 async function callAI(labelGi, labelEi) {   
   const domainContext = [...E].filter(el => el !== labelGi && el !== labelEi).join(', ');   
   const meiosExistentes = nodes.filter(nd => nd.group === 'meio').map(nd => nd.label);   
   const meiosStr = meiosExistentes.length ? meiosExistentes.join(', ') : '(nenhum ainda)';   
-  const systemPrompt = `Você é um ontólogo aplicando o método Sphere-M de construção de grafos de conhecimento. REGRA MAIS IMPORTANTE, aplique-a antes de qualquer outra coisa (DESAMBIGUAÇÃO DE TERMOS): Muitas palavras do português têm mais de um sentido possível. Você NUNCA deve assumir o sentido mais comum ou mais frequente de uma palavra no uso cotidiano. Para CADA termo do par abaixo, primeiro decida qual sentido faz sentido dentro do domínio informado (a lista de "Domínio" no final e os outros conceitos já usados no grafo) - depois de fixar esse sentido, avalie a relação. Se um termo puder ser lido de duas formas diferentes, escolha sempre a leitura compatível com o domínio, mesmo que ela não seja a mais óbvia fora desse contexto. Casos já conhecidos onde isso é crítico (mas a regra vale para qualquer termo ambíguo, não apenas estes): ${DOMAIN_NOTES} O método conecta dois conceitos ("${labelGi}" e "${labelEi}") através de um único CONCEITO INTERMEDIÁRIO (o "meio"), usando relações do tipo AOF: ${TIPOS_AOF.join(' | ')} Sua tarefa: dado um par de conceitos, decidir se existe (ou pode ser construída) uma relação ontológica direta e plausível entre eles, e se sim, propor UM conceito intermediário curto que ligue os dois - de forma que "${labelGi}" se relacione com o meio, e o meio se relacione com "${labelEi}", cada ligação usando um dos tipos AOF acima. Regras estritas de formato responda SEMPRE exatamente neste layout, sem nenhum texto antes ou depois: RELAÇÃO: SIM ou NÃO CONCEITO_MEIO: <1 a 3 palavras, ou "-" se RELAÇÃO for NÃO> TIPO_AOF: <um dos tipos da lista acima, ou "-" se RELAÇÃO for NÃO> JUSTIFICATIVA: <1 a 2 frases, direto, sem introduções como "com certeza" ou "ótima pergunta"> Regras de conteúdo: Não invente relações fracas, genéricas ou forçadas só para preencher a resposta. Se a relação exigir mais de um passo intermediário óbvio ou for artificial, responda RELAÇÃO: NÃO - O CONCEITO_MEIO deve ser um substantivo ou expressão curta, nunca uma frase. - Use os outros elementos do domínio apenas como contexto de fundo, não force conexão com eles. - Conceitos de meio já usados em outros pares deste grafo: ${meiosStr}. NÃO repita nenhum desses como CONCEITO_MEIO - proponha um termo diferente, específico pra esse par. Só repita um termo já usado se ele for literalmente o mesmo conceito exato (não apenas parecido), o que é raro.`;   
+  const systemPrompt = `Você é um ontólogo de domínio e analista de sistemas complexos aplicando o método Sphere-M. Seu valor está em revelar o que um leigo, e até um profissional júnior, NÃO enxergaria: as estruturas intermediárias, ocultas, que de fato conectam dois conceitos.
+
+ETAPA 0 - DESAMBIGUAÇÃO
+Nunca assuma o sentido mais comum de uma palavra. Fixe, para cada termo do par, o sentido compatível com o domínio informado e com os conceitos já usados no grafo. Só depois avalie a relação.
+Casos já conhecidos (a regra vale para qualquer termo ambíguo):
+${DOMAIN_NOTES}
+
+TAREFA
+Conectar "${labelGi}" e "${labelEi}" por UM conceito intermediário (o "meio"), de forma que "${labelGi}" se ligue ao meio e o meio se ligue a "${labelEi}", cada ligação usando um tipo AOF:
+${TIPOS_AOF.join(' | ')}
+
+NATUREZA DO MEIO (regra rígida)
+O meio deve ser OBRIGATORIAMENTE uma Classe ou um Objeto:
+- Classe: categoria geral de coisas que possuem vários exemplares (ex.: "Protocolo", "Instituição", "Registro").
+- Objeto: entidade concreta e identificável do domínio (ex.: "Prontuário", "Cartão de vacina", "Calendário letivo").
+É PROIBIDO como meio:
+- processos, ações ou eventos (ex.: "abandono", "adesão", "progressão", "intervenção");
+- estados, qualidades ou propriedades (ex.: "vulnerabilidade", "motivação", "equilíbrio");
+- instâncias únicas ou nomes próprios;
+- frases ou expressões com verbo.
+Teste: você consegue dizer "um(a) X" e "vários X" e apontar exemplos no mundo? Se sim, é Classe/Objeto. Se X descreve "como algo está" ou "o que acontece", rejeite.
+
+NÃO-OBVIEDADE (regra rígida)
+Antes de responder, gere internamente pelo menos 4 candidatos a meio e depois:
+1. Descarte o primeiro que lhe veio à mente e qualquer candidato que seja a associação típica de senso comum entre os dois termos.
+2. Teste do leigo: se uma pessoa sem formação na área citaria esse meio em 5 segundos, descarte.
+3. Prefira meios estruturais que pertencem a outra camada do sistema (institucional, legal, econômica, logística, tecnológica, documental) e que os dois conceitos compartilham sem que isso seja percebido de imediato. O melhor meio explica POR QUE os dois conceitos se ligam, e não apenas QUE se ligam.
+4. Dentre os candidatos que sobreviveram, escolha o menos óbvio.
+
+ANCORAGEM (regra rígida)
+Não-óbvio NÃO significa inventado. O meio escolhido deve ser algo que um especialista da área reconheceria como real e relevante. Nunca fabrique entidades, siglas, leis ou instrumentos que você não tenha certeza de que existem. Responda RELAÇÃO: NÃO apenas se, depois de todos os passos, não restar nenhum candidato real e defensável.
+
+REPETIÇÃO
+Meios já usados neste grafo: ${meiosStr}. Não repita nenhum, salvo se for exatamente o mesmo conceito, o que é raro.
+
+FORMATO
+Responda exatamente neste layout, em texto puro (sem markdown, sem asteriscos, sem nada antes ou depois):
+
+RELAÇÃO: SIM ou NÃO
+CONCEITO_MEIO: <1 a 3 palavras, substantivo; "-" se RELAÇÃO for NÃO>
+TIPO_AOF: <um tipo da lista acima; "-" se RELAÇÃO for NÃO>
+JUSTIFICATIVA: <2 a 3 frases: (1) o que é o meio e por que um leigo não o veria; (2) como "${labelGi}" se liga a ele; (3) como ele se liga a "${labelEi}">`;   
   const userPrompt = `Domínio: ${domainContext || '(sem outros elementos ainda)'}\n\nPar a analisar: "${labelGi}" e "${labelEi}".\nLembrete: antes de decidir a relação, confirme o sentido de cada termo do par usando o domínio acima, não o sentido mais comum da palavra fora desse contexto.`;   
-  const apiKey = window.APP_CONFIG?.MISTRAL_API_KEY;
+  const apiKey = window.APP_CONFIG?.GROQ_API_KEY;
   if (!apiKey) return null;   
-  try {     
-    const controller = new AbortController();     
-    const timeoutId = setTimeout(() => controller.abort(), 20000);      
-    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
+
+    const response = await fetchComRetry('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'ministral-8b-latest',
+        model: 'openai/gpt-oss-120b',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user',   content: userPrompt   },
         ],
-        temperature: 0.2,
-        max_tokens: 300,
+        temperature: 0.6,
+        max_tokens: 2000,
+        reasoning_effort: 'medium',
       }),
       signal: controller.signal,
-    });     
-    clearTimeout(timeoutId);     
-    if (!response.ok) return null;     
-    const data = await response.json();     
-    return data?.choices?.[0]?.message?.content ?? null;   
-  } catch {     
-    return null; 
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.error('Erro da API:', response.status, await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    return data?.choices?.[0]?.message?.content ?? null;
+  } catch (err) {
+    console.error('Falha na chamada:', err);
+    return null;
   }
 }
 

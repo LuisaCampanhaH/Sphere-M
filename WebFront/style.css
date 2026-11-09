@@ -1463,3 +1463,120 @@ button:active { transform: scale(0.98); }
   background: var(--accent);
   color: #fff;
 }
+
+/* ── Contexto da IA (fase 1) ─────────────────── */
+.label-chip.ctx {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+#input-contexto {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  box-sizing: border-box;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-family: 'Geist', sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+  outline: none;
+}
+#input-contexto::placeholder { color: var(--text-muted); }
+#input-contexto:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+  background: var(--surface);
+}
+#contexto-contador {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 4px;
+}
+
+/* ── Cartão do par: natureza e tipo AOF na hora ── */
+#meio-detalhes { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.meio-detalhe { display: flex; flex-direction: column; gap: 4px; }
+.meio-detalhe-label {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+#natureza-escolha { display: flex; gap: 6px; }
+#natureza-escolha button {
+  flex: 1;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text);
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  cursor: pointer;
+}
+#natureza-escolha button[aria-checked="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+#meio-detalhes #input-tipo-aof { margin-top: 0; height: 34px; font-size: 13px; }
+#repeticao-acoes { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+#repeticao-acoes button { width: 100%; }
+
+/* ── Ajuda do canvas (substitui a faixa de atalhos) ── */
+#ajuda-btn {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text-2);
+  font-family: 'Geist Mono', monospace;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+#ajuda-btn:hover, #ajuda-btn[aria-expanded="true"] { background: var(--surface3); }
+#ajuda-card {
+  position: absolute;
+  bottom: 54px;
+  left: 14px;
+  width: min(340px, calc(100% - 28px));
+  max-height: 70%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  padding: 12px 14px;
+  z-index: 20;
+}
+#ajuda-card[hidden] { display: none; }
+.ajuda-titulo {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+#ajuda-card dl { margin: 0; font-size: 13px; line-height: 1.35; }
+#ajuda-card dt { font-weight: 600; color: var(--text); }
+#ajuda-card dd { margin: 0 0 8px; color: var(--text-2); }

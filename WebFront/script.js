@@ -29,6 +29,11 @@ const el = {
   importJsonInput: document.getElementById('import-json-input'),
   metricsBtn: document.getElementById('metrics-btn'),
   metricsPanel: document.getElementById('metrics-panel'),
+  inputContexto: document.getElementById('input-contexto'),
+  naturezaEscolha: document.getElementById('natureza-escolha'),
+  tipoAofEscolha: document.getElementById('input-tipo-aof'),
+  repeticaoAcoes: document.getElementById('repeticao-acoes'),
+  meioDetalhes: document.getElementById('meio-detalhes'),
 };
 
 window.addEventListener('resize', () => {   
@@ -783,7 +788,7 @@ function draw() {
   const BADGE_R    = 3;
   nodes.forEach(nd => {
     const textW = ctx.measureText(nd.label).width;
-    nd.w = Math.max(textW + 28, 64);
+    nd.w = Math.max(textW + 28 + (nd.tagNatureza ? 18 : 0), 64);
     nd.hasBadges = nd.linkedToCeiling || nd.linkedToFloor;
     nd.h = LABEL_ZONE + (nd.hasBadges ? BADGE_ZONE : 0);
   });
@@ -996,7 +1001,8 @@ function parseList(str) {
 document.getElementById('start-btn').addEventListener('click', () => {   
   const tetos = parseList(el.inputTeto.value);   
   const pisos = parseList(el.inputPiso.value);   
-  const rels = parseList(el.inputRel.value);   
+  const rels = parseList(el.inputRel.value);
+  contextoDominio = (el.inputContexto?.value || '').trim();   
   if (!tetos.length || !pisos.length) {     
     ['input-teto', 'input-piso'].forEach(id => {       
       const el = document.getElementById(id);       
@@ -1066,8 +1072,61 @@ let _aiCurrentPair = null;
 let _aiLastMeio = null; 
 let _aiLastTipoAof = null; 
 
+// Versão do prompt enviado à IA. Vai em cada JSON exportado: sessões feitas
+// com versões diferentes não têm α_IA comparável (o experimento mudou).
+const PROMPT_VERSAO = 2;
+// Contexto do domínio escrito pela pesquisadora na fase 1. Substitui as
+// notas fixas que existiam aqui (ex.: "natal" ≠ feriado): vale para qualquer domínio.
+let contextoDominio = '';
+// Natureza escolhida para o meio do par atual: 'Classe' | 'Objeto' | null.
+let naturezaEscolhida = null;
+
+// Chave de comparação para detectar conceito repetido: minúsculas, sem
+// acento, sem pontuação e com um plural simples cortado ("prontuários" =
+// "prontuário"). É uma aproximação: não pega sinônimos.
+function normalizarTermo(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ').trim().split(' ')
+    .map(w => (w.length > 3 && w.endsWith('s')) ? w.slice(0, -1) : w)
+    .join(' ');
+}
+function conceitoExistente(label) {
+  const k = normalizarTermo(label);
+  if (!k) return null;
+  return nodes.find(nd => normalizarTermo(nd.label) === k) || null;
+}
+function normalizarNatureza(s) {
+  if (/^classe/i.test(s || '')) return 'Classe';
+  if (/^objeto/i.test(s || '')) return 'Objeto';
+  return null;
+}
+function renderNaturezaEscolha() {
+  el.naturezaEscolha?.querySelectorAll('button[data-natureza]').forEach(b =>
+    b.setAttribute('aria-checked', String(b.dataset.natureza === naturezaEscolhida)));
+}
+function resetarCartaoMeio() {
+  naturezaEscolhida = null;
+  renderNaturezaEscolha();
+  if (el.tipoAofEscolha) el.tipoAofEscolha.value = '';
+  if (el.repeticaoAcoes) el.repeticaoAcoes.style.display = 'none';
+}
+function mostrarAcoesRepeticao(label) {
+  const b = document.getElementById('reaproveitar-btn');
+  if (!b || !el.repeticaoAcoes) return;
+  b.textContent = `Reaproveitar "${label}"`;
+  b.dataset.label = label;
+  el.repeticaoAcoes.style.display = 'flex';
+}
+function setAILoadingText(texto) {
+  const s = document.getElementById('ai-loading-text');
+  if (s) s.textContent = texto;
+}
+function atualizarContadorContexto() {
+  const c = document.getElementById('contexto-contador');
+  if (c && el.inputContexto) c.textContent = `${el.inputContexto.value.length} / 6000`;
+}
+
 const TIPOS_AOF = ['é-um', 'é-parte-de', 'é-composto-por', 'é-uma-variação-de', 'é-um-atributo-de', 'é-um-componente-de', 'é-um-elemento-de', 'é-caracterizado-por'];
-const DOMAIN_NOTES = `- "Natal", "pré-natal" e "pós-natal": aqui SEMPRE se referem ao contexto de mortalidade/natalidade (gravidez, parto, período neonatal) NUNCA ao feriado de Natal (25 de dezembro). Trate esses termos exclusivamente como fases do ciclo gestacional/perinatal, mesmo que a palavra "Natal" sozinha remeta ao feriado no uso cotidiano.`; 
 
 async function fetchComRetry(url, options, tentativas = 4) {
   for (let i = 0; i < tentativas; i++) {
@@ -1082,7 +1141,15 @@ async function fetchComRetry(url, options, tentativas = 4) {
   return fetch(url, options);
 }
 
-async function callAI(labelGi, labelEi) {   
+async function callAI(labelGi, labelEi, evitar = []) {
+  const conceitosGrafo = nodes.map(nd => nd.label).filter(l => l !== labelGi && l !== labelEi);
+  const conceitosStr = conceitosGrafo.length ? conceitosGrafo.join(', ') : '(nenhum ainda)';
+  const contextoBloco = contextoDominio
+    ? `CONTEXTO DO DOMÍNIO (escrito pela pesquisadora; é a referência que fixa o sentido dos termos e prevalece sobre o uso cotidiano das palavras):\n"""\n${contextoDominio}\n"""`
+    : 'CONTEXTO DO DOMÍNIO: não informado. Deduza o domínio pelos conceitos já presentes no grafo.';
+  const evitarStr = evitar.length
+    ? `\nNa tentativa anterior você sugeriu ${evitar.map(x => `"${x}"`).join(', ')}, que JÁ EXISTE no grafo. Escolha um conceito diferente.`
+    : '';   
   const domainContext = [...E].filter(el => el !== labelGi && el !== labelEi).join(', ');   
   const meiosExistentes = nodes.filter(nd => nd.group === 'meio').map(nd => nd.label);   
   const meiosStr = meiosExistentes.length ? meiosExistentes.join(', ') : '(nenhum ainda)';   
@@ -1090,8 +1157,7 @@ async function callAI(labelGi, labelEi) {
 
 ETAPA 0 - DESAMBIGUAÇÃO
 Nunca assuma o sentido mais comum de uma palavra. Fixe, para cada termo do par, o sentido compatível com o domínio informado e com os conceitos já usados no grafo. Só depois avalie a relação.
-Casos já conhecidos (a regra vale para qualquer termo ambíguo):
-${DOMAIN_NOTES}
+${contextoBloco}
 
 TAREFA
 Conectar "${labelGi}" e "${labelEi}" por UM conceito intermediário (o "meio"), de forma que "${labelGi}" se ligue ao meio e o meio se ligue a "${labelEi}", cada ligação usando um tipo AOF:
@@ -1118,14 +1184,16 @@ Antes de responder, gere internamente pelo menos 4 candidatos a meio e depois:
 ANCORAGEM (regra rígida)
 Não-óbvio NÃO significa inventado. O meio escolhido deve ser algo que um especialista da área reconheceria como real e relevante. Nunca fabrique entidades, siglas, leis ou instrumentos que você não tenha certeza de que existem. Responda RELAÇÃO: NÃO apenas se, depois de todos os passos, não restar nenhum candidato real e defensável.
 
-REPETIÇÃO
-Meios já usados neste grafo: ${meiosStr}. Não repita nenhum, salvo se for exatamente o mesmo conceito, o que é raro.
+REPETIÇÃO (regra rígida)
+Conceitos que já existem no grafo, em qualquer papel: ${conceitosStr}.
+O meio NÃO pode ser nenhum deles, nem sinônimo, flexão (singular/plural, masculino/feminino) ou paráfrase de um deles. Também não pode ser "${labelGi}" nem "${labelEi}".${evitarStr}
 
 FORMATO
 Responda exatamente neste layout, em texto puro (sem markdown, sem asteriscos, sem nada antes ou depois):
 
 RELAÇÃO: SIM ou NÃO
 CONCEITO_MEIO: <1 a 3 palavras, substantivo; "-" se RELAÇÃO for NÃO>
+NATUREZA: <Classe ou Objeto; "-" se RELAÇÃO for NÃO>
 TIPO_AOF: <um tipo da lista acima; "-" se RELAÇÃO for NÃO>
 JUSTIFICATIVA: <2 a 3 frases: (1) o que é o meio e por que um leigo não o veria; (2) como "${labelGi}" se liga a ele; (3) como ele se liga a "${labelEi}">`;   
   const userPrompt = `Domínio: ${domainContext || '(sem outros elementos ainda)'}\n\nPar a analisar: "${labelGi}" e "${labelEi}".\nLembrete: antes de decidir a relação, confirme o sentido de cada termo do par usando o domínio acima, não o sentido mais comum da palavra fora desse contexto.`;   
@@ -1168,6 +1236,20 @@ JUSTIFICATIVA: <2 a 3 frases: (1) o que é o meio e por que um leigo não o veri
   }
 }
 
+// Chama a IA e, se a sugestão já existir no grafo, pede de novo UMA vez
+// proibindo esse termo. Devolve o texto da última resposta (null = falha).
+async function consultarIASemRepetir(labelA, labelB) {
+  let texto = await callAI(labelA, labelB);
+  if (texto === null) return null;
+  const p = parseAIResponse(texto);
+  if (p.hasRelation && p.meio && conceitoExistente(p.meio)) {
+    setAILoadingText(`A IA repetiu "${p.meio}". Pedindo outra sugestão…`);
+    const texto2 = await callAI(labelA, labelB, [p.meio]);
+    if (texto2 !== null) texto = texto2;
+  }
+  return texto;
+}
+
 function parseAIResponse(text) {   
   if (!text) return { hasRelation: false, meio: null, tipoAof: null, justificativa: '' };   
   const grab = (label) => {     
@@ -1178,12 +1260,14 @@ function parseAIResponse(text) {
   if (relacaoRaw) {     
     const hasRelation = /^sim/i.test(relacaoRaw);     
     const meioRaw = grab('CONCEITO_MEIO|CONCEITO MEIO');     
-    const tipoRaw = grab('TIPO_AOF|TIPO AOF');     
+    const tipoRaw = grab('TIPO_AOF|TIPO AOF');
+    const natRaw = grab('NATUREZA');     
     const justRaw = grab('JUSTIFICATIVA') || text;     
     return {       
       hasRelation,       
       meio: hasRelation && meioRaw && meioRaw !== '-' ? meioRaw : null,       
-      tipoAof: hasRelation && tipoRaw && tipoRaw !== '-' ? tipoRaw : null,       
+      tipoAof: hasRelation && tipoRaw && tipoRaw !== '-' ? tipoRaw : null,
+      natureza: hasRelation ? normalizarNatureza(natRaw) : null,       
       justificativa: justRaw,     
     };   
   }
@@ -1199,7 +1283,8 @@ function showAIIdle() {
 }
 
 function showAILoading() {   
-  _setAIState('loading');   
+  _setAIState('loading');
+  setAILoadingText('Consultando IA…');   
   el.aiHint.style.display = 'none'; 
 }
 
@@ -1282,11 +1367,13 @@ if (!_aiJaContabilizado) {
   const meioLimpo = parsed.meio ? parsed.meio.replace(/\*+/g, '').trim() : null;
   _aiLastMeio = parsed.hasRelation ? meioLimpo : null;
   _aiLastTipoAof = (parsed.hasRelation && TIPOS_AOF.includes(parsed.tipoAof)) ? parsed.tipoAof : null;
-  const jaExiste = parsed.meio && nodes.some(     
-    nd => nd.group === 'meio' && nd.label.toLowerCase() === parsed.meio.toLowerCase()   
-  );   
+  naturezaEscolhida = parsed.hasRelation ? (parsed.natureza || null) : null;
+  renderNaturezaEscolha();
+  if (el.tipoAofEscolha) el.tipoAofEscolha.value = _aiLastTipoAof || '';
+  const jaExiste = parsed.meio ? conceitoExistente(parsed.meio) : null;
   if (parsed.hasRelation && parsed.meio && jaExiste) {     
-    hintEl.textContent = `A IA sugeriu "${parsed.meio}", mas esse termo já existe no grafo. Confira se faz sentido reaproveitar.`;     
+    hintEl.textContent = `A IA repetiu "${parsed.meio}", que já está no grafo como "${jaExiste.label}". Reaproveite o nó ou digite outro conceito.`;
+    mostrarAcoesRepeticao(jaExiste.label);     
     hintEl.style.display = 'block';     
     if (inputEl && !inputEl.classList.contains('is-extra')) inputEl.value = '';   
   } else if (parsed.hasRelation && parsed.meio) {     
@@ -1321,7 +1408,9 @@ async function updatePairUI() {
     el.confirmBtn.disabled = true;     
     el.skipBtn.disabled = true;     
     el.alreadyConnectedMsg.style.display = 'none';     
-    el.pairCounter.textContent = 'Rodada ' + round + ' concluída!';     
+    el.pairCounter.textContent = 'Rodada ' + round + ' concluída!';
+    if (el.meioDetalhes) el.meioDetalhes.style.display = 'none';
+    if (el.repeticaoAcoes) el.repeticaoAcoes.style.display = 'none';     
     el.progressBar.style.width = '100%';     
     showAIIdle();     
     const complete = isGraphComplete();     
@@ -1346,7 +1435,8 @@ async function updatePairUI() {
   _aiCurrentPair = [labelA, labelB];   
   document.getElementById('node-a-label').textContent = labelA;   
   document.getElementById('node-b-label').textContent = labelB;   
-  el.pairCounter.textContent = `Par ${pairIdx + 1} de ${GE.length} (Rodada ${round})`;   
+  el.pairCounter.textContent = `Par ${pairIdx + 1} de ${GE.length} (Rodada ${round})`;
+  if (el.meioDetalhes) el.meioDetalhes.style.display = '';   
   el.progressBar.style.width = `${(pairIdx / GE.length) * 100}%`;   
   el.inputMeio.value = '';   
   el.inputMeio.disabled = true;      
@@ -1376,9 +1466,10 @@ async function updatePairUI() {
   if (nb) nb.highlight = true;   
   startSim(200);   
   _aiJaContabilizado = false;
+  resetarCartaoMeio();
   showAILoading();   
   const currentSession = sessionId;   
-  const aiText = await callAI(labelA, labelB);   
+  const aiText = await consultarIASemRepetir(labelA, labelB);   
   if (finished || sessionId !== currentSession) return;   
   if (aiText === null) {
     showAIError();
@@ -1407,7 +1498,8 @@ function confirmPair() {
   const raw = el.inputMeio?.value.trim();   
   if (!raw) { advancePair(); return; }   
   const humanoModificou = _aiLastMeio === null || raw !== _aiLastMeio;
-  const meios = raw.split(',').map(s => s.trim()).filter(Boolean);   
+  const meios = raw.split(',').map(s => s.trim()).filter(Boolean);
+  const tipoEscolhido = (el.tipoAofEscolha && el.tipoAofEscolha.value) || null;   
   if (!meios.length) { advancePair(); return; }   
   
   const [labelA, labelB] = GE[pairIdx];   
@@ -1436,9 +1528,11 @@ function confirmPair() {
       E.add(label);     
     }     
     
+    // Natureza escolhida no cartão: só preenche, nunca sobrescreve a de um nó existente.
+    if (naturezaEscolhida && !nm.tagNatureza) nm.tagNatureza = naturezaEscolhida;
     // As arestas agora fluem de Teto -> Meio e de Meio -> Piso (Ajustado)
-    getOrCreateEdge(gi.id, nm.id, _aiLastTipoAof);     
-    getOrCreateEdge(nm.id, ei.id, _aiLastTipoAof);   
+    getOrCreateEdge(gi.id, nm.id, tipoEscolhido);     
+    getOrCreateEdge(nm.id, ei.id, tipoEscolhido);   
   });   
 
   pairsAccepted++;
@@ -1484,7 +1578,9 @@ function continueLoop() {
   _avancarRodada({ rebuildGE: true });
 }
 
-function finishLoop() {   
+function finishLoop() {
+  if (el.meioDetalhes) el.meioDetalhes.style.display = 'none';
+  if (el.repeticaoAcoes) el.repeticaoAcoes.style.display = 'none';   
    _fecharRodadaStats();
   executePoda();      
   finished = true;   
@@ -1533,7 +1629,8 @@ document.getElementById('ai-retry-btn').addEventListener('click', async () => {
   showAILoading();   
   el.inputMeio.disabled = true;   
   el.confirmBtn.disabled = true;   
-  const aiText = await callAI(labelA, labelB);
+  resetarCartaoMeio();
+  const aiText = await consultarIASemRepetir(labelA, labelB);
   if (aiText === null) {
     showAIError();
     el.inputMeio.disabled = false;
@@ -1551,6 +1648,53 @@ document.getElementById('ai-retry-btn').addEventListener('click', async () => {
     el.confirmBtn.disabled = false;
   }
 });
+
+// ── Cartão do par: natureza e tipo AOF escolhidos na hora ──
+if (el.tipoAofEscolha) {
+  [['', 'sem tipo'], ...TIPOS_AOF.map(x => [x, x])].forEach(([v, rotulo]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = rotulo;
+    el.tipoAofEscolha.appendChild(o);
+  });
+  el.tipoAofEscolha.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); confirmPair(); }
+    if (e.key === 'Escape') { e.preventDefault(); advancePair(); }
+  });
+}
+el.naturezaEscolha?.querySelectorAll('button[data-natureza]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    naturezaEscolhida = naturezaEscolhida === btn.dataset.natureza ? null : btn.dataset.natureza;
+    renderNaturezaEscolha();
+  });
+});
+document.getElementById('reaproveitar-btn')?.addEventListener('click', e => {
+  el.inputMeio.value = e.currentTarget.dataset.label || '';
+  el.repeticaoAcoes.style.display = 'none';
+  el.inputMeio.focus();
+});
+document.getElementById('digitar-outro-btn')?.addEventListener('click', () => {
+  el.inputMeio.value = '';
+  el.repeticaoAcoes.style.display = 'none';
+  el.inputMeio.focus();
+});
+el.inputContexto?.addEventListener('input', atualizarContadorContexto);
+
+// ── Ajuda do canvas: botão "?" abre/fecha o cartão de atalhos ──
+(function () {
+  const btn = document.getElementById('ajuda-btn');
+  const card = document.getElementById('ajuda-card');
+  if (!btn || !card) return;
+  const fechar = () => { card.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+  btn.addEventListener('click', () => {
+    const abrir = card.hidden;
+    card.hidden = !abrir;
+    btn.setAttribute('aria-expanded', String(abrir));
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !card.hidden) fechar(); });
+  document.addEventListener('mousedown', e => {
+    if (!card.hidden && !card.contains(e.target) && e.target !== btn) fechar();
+  });
+})();
 
 el.inputMeio.addEventListener('keydown', e => {   
   if (e.key === 'Enter') confirmPair();   
@@ -1583,6 +1727,9 @@ function resetAll() {
   el.inputTeto.value = '';   
   el.inputPiso.value = '';   
   el.inputRel.value = '';
+  if (el.inputContexto) el.inputContexto.value = '';
+  contextoDominio = '';
+  atualizarContadorContexto();
   renderAuditPanel();
   atualizarBotaoEscondidos();
   draw();
@@ -1683,7 +1830,9 @@ function buildSessionExport() {
   return {     
     sphereM: {       
       version: 1,       
-      exportedAt: new Date().toISOString(),       
+      exportedAt: new Date().toISOString(),
+      promptVersao: PROMPT_VERSAO,
+      contexto: contextoDominio,       
       round,       
       finished,       
       domain: {         
@@ -1819,7 +1968,10 @@ function importSessionFromObject(raw) {
     return false;   
   }
   
-  resetImportState();   
+  resetImportState();
+  contextoDominio = typeof data.contexto === 'string' ? data.contexto : '';
+  if (el.inputContexto) el.inputContexto.value = contextoDominio;
+  atualizarContadorContexto();   
   
   const idMap = new Map();   
   data.nodes.forEach(n => {     

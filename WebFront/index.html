@@ -10,7 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@300;400;500&family=Geist:wght@300;400;500;600&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=3" />
 </head>
 
 <body>
@@ -35,7 +35,21 @@
           <button id="path-status-clear" type="button" aria-label="Limpar seleção">✕</button>
         </div>
         <div id="path-filter-warning" style="display:none"></div>
-        <div id="canvas-overlay-hint">drag · duplo clique no nó pra editar · clique na aresta pro tipo AOF · scroll: zoom · Alt+clique: esconder/mostrar nó (poda nós do meio com 1 ligação) · Shift+clique: seleciona nó (mostra só selecionados) · botão do meio/espaço+arraste: mover · delete</div>
+        <button id="ajuda-btn" type="button" title="Atalhos do canvas" aria-label="Atalhos do canvas" aria-expanded="false" aria-controls="ajuda-card">?</button>
+        <div id="ajuda-card" hidden>
+          <div class="ajuda-titulo">Atalhos</div>
+          <dl>
+            <dt>Duplo clique no nó</dt><dd>editar nome, natureza, caminho e atributos</dd>
+            <dt>Duplo clique na aresta</dt><dd>escolher o tipo AOF</dd>
+            <dt>Arrastar um nó</dt><dd>mover o nó</dd>
+            <dt>Rodinha do mouse</dt><dd>zoom</dd>
+            <dt>Botão do meio, ou Espaço + arrastar</dt><dd>mover a tela</dd>
+            <dt>Alt + clique</dt><dd>esconder ou mostrar o nó (nós do meio que ficam com 1 ligação somem junto)</dd>
+            <dt>Shift + clique</dt><dd>selecionar nós e ver só eles</dd>
+            <dt>Delete</dt><dd>apagar do grafo o nó selecionado</dd>
+            <dt>Enter / Esc</dt><dd>confirmar / pular o par</dd>
+          </dl>
+        </div>
         <div id="dropzone-overlay">
           <div id="dropzone-inner">
             <span id="dropzone-icon">⇩</span>
@@ -96,6 +110,14 @@
             </label>
             <input type="text" id="input-rel" placeholder="ex: dieta, exercício" />
           </div>
+          <div class="field-group">
+            <label for="input-contexto">
+              <span class="label-chip ctx">contexto da IA</span>
+              <span class="label-optional">opcional</span>
+            </label>
+            <textarea id="input-contexto" rows="4" maxlength="6000" placeholder="Descreva a área e cole referências: definições, trechos de artigos, títulos de livros. Ex.: saúde materno-infantil; &quot;natal&quot; é o período do parto, não o feriado."></textarea>
+            <div id="contexto-contador">0 / 6000</div>
+          </div>
 
           <div class="actions">
             <button id="start-btn" class="btn-primary">
@@ -146,7 +168,7 @@
 
             <div id="ai-loading" style="display:none">
               <span class="ai-spinner"></span>
-              <span>Consultando IA…</span>
+              <span id="ai-loading-text">Consultando IA…</span>
             </div>
 
             <div id="ai-result" style="display:none">
@@ -169,6 +191,23 @@
 
 
           <input type="text" id="input-meio" placeholder="palavra(s) do meio — vírgula para vários" />
+          <div id="repeticao-acoes" style="display:none">
+            <button id="reaproveitar-btn" type="button" class="btn-ghost"></button>
+            <button id="digitar-outro-btn" type="button" class="btn-ghost">Digitar outro</button>
+          </div>
+          <div id="meio-detalhes">
+            <div class="meio-detalhe">
+              <span class="meio-detalhe-label">natureza do meio</span>
+              <div id="natureza-escolha" role="radiogroup" aria-label="Natureza do conceito do meio">
+                <button type="button" data-natureza="Classe" role="radio" aria-checked="false">Classe</button>
+                <button type="button" data-natureza="Objeto" role="radio" aria-checked="false">Objeto</button>
+              </div>
+            </div>
+            <div class="meio-detalhe">
+              <label class="meio-detalhe-label" for="input-tipo-aof">tipo AOF</label>
+              <select id="input-tipo-aof"></select>
+            </div>
+          </div>
 
           <div id="phase2-actions">
             <div class="btn-row">
@@ -334,7 +373,7 @@
 
   </div>
   <script src="config.js"></script>
-  <script src="script.js"></script>
+  <script src="script.js?v=3"></script>
 </body>
 
 </html>

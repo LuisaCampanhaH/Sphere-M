@@ -152,9 +152,12 @@ Nada nas métricas decide "quando parar" além da **Densidade** (critério de pa
 | Métrica | O que mede |
 |---|---|
 | Cobertura (por rodada) | Quanto do espaço de pares possíveis foi de fato testado, rodada a rodada |
-| α_IA / α_domínio | Precisão da IA (o quanto ela acerta) vs. riqueza real do domínio (quantos pares testados viram relação aceita) |
-| τ_HITL / τ_IA | Quanto o humano precisou corrigir a sugestão da IA vs. quanto foi aceito como veio |
-| Delta (Δ) | Desequilíbrio entre polos "positivo"/"negativo" de um domínio marcado manualmente (métrica condicional, só no WebFront) |
+| Precisão da IA | Das relações que a IA sugeriu, quantas o humano confirmou |
+| Riqueza do domínio | Dos pares testados, quantos viraram relação aceita |
+| Lacuna da IA | Riqueza do domínio menos Precisão da IA. Positiva: o humano aceitou pares em que a IA disse NÃO. Negativa: a IA é seletiva e acerta mais do que a média dos pares testados |
+| Intervenção humana | Das relações aceitas, quantas o humano precisou corrigir |
+| Autonomia da IA | Das relações aceitas, quantas ficaram exatamente como a IA sugeriu |
+| Delta | Desequilíbrio entre polos "positivo"/"negativo" de um domínio marcado manualmente (métrica condicional, só no WebFront) |
 
 Detalhes formais de cada fórmula estão em `docs/Sphere-M_Especificacao_Matematica_Metricas_1.pdf`, implementados em `Python code/metricas.py`.
 

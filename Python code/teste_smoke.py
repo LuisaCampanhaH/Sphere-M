@@ -8,12 +8,12 @@ e o roundtrip de exportar/importar sem depender de input() interativo.
 
 Atualizado para cobrir as métricas novas:
   - Cobertura por rodada (denominador fixo por rodada)
-  - Decomposição de α em alpha_ia e alpha_dominio
+  - Precisão da IA, Riqueza do Domínio e Lacuna da IA
   - Contribuição do HITL (tau_hitl / tau_ia)
 """
 import os
 from Main import Grafo
-from metricas import calcular_metricas, imprimir_metricas
+from metricas import calcular_metricas, imprimir_metricas, _lacuna_ia
 from modelo_io import exportar_modelo, importar_modelo
 
 grafo = Grafo()
@@ -137,6 +137,13 @@ assert abs(m2.alpha_ia - round(2/3, 3)) < 1e-6, \
 assert m2.tau_hitl is not None
 assert abs(m2.tau_hitl - 0.5) < 1e-9, f"tau_hitl esperado 0.5, obtido {m2.tau_hitl}"
 assert abs(m2.tau_ia - 0.5) < 1e-9,   f"tau_ia esperado 0.5, obtido {m2.tau_ia}"
+
+# Lacuna da IA = Riqueza do Domínio - Precisão da IA
+assert m2.lacuna_ia == round(m2.alpha_dominio - m2.alpha_ia, 3), \
+    f"lacuna_ia incorreta: {m2.lacuna_ia}"
+assert _lacuna_ia(0.4, 0.7) == 0.3,  "positiva: domínio acima da IA"
+assert _lacuna_ia(0.8, 0.5) == -0.3, "negativa: IA acima do domínio"
+assert _lacuna_ia(None, 0.7) is None, "sem sugestões da IA fica indefinida"
  
 # Cobertura por rodada: agora duas entradas
 assert len(m2.cobertura_por_rodada) == 2
@@ -174,7 +181,7 @@ print("\n>>> Roundtrip exportar/importar:")
 campos = [
     "total_elementos", "esfera_fechada", "raio", "densidade",
     "pares_avaliados", "pares_aceitos",
-    "alpha_dominio", "alpha_ia",
+    "alpha_dominio", "alpha_ia", "lacuna_ia",
     "tau_hitl", "tau_ia",
     "delta", "produtividade",
     "cobertura_global",

@@ -10,9 +10,9 @@ Reúne, num só lugar:
     "confirmar uma relação" — a fórmula antiga tratava as duas coisas
     como uma coisa só; Cobertura agora calculada por rodada (denominador fixo no
     início de cada rodada, não no momento da leitura);
-  - decomposição de α em α_IA e α_domínio, separando precisão da IA
-    de riqueza do domínio;
-  - τ_HITL e τ_IA, que medem contribuição real do especialista humano
+  - decomposição da Taxa de Aceitação em Precisão da IA e Riqueza do
+    Domínio, mais a Lacuna da IA (Riqueza do Domínio - Precisão da IA);
+  - Intervenção Humana e Autonomia da IA, que medem contribuição real do especialista humano
     versus autonomia da IA no processo de captura;
   - Delta, calculada em cima de dado que o grafo já carrega
     (tagCaminho), mas que nenhuma das duas versões do método
@@ -41,7 +41,7 @@ a qualquer momento, com a esfera aberta ou fechada.
 
 from dataclasses import dataclass, field
 
-# ── Diagnóstico da decomposição de α ──────────────────────────────────
+# ── Diagnóstico da Taxa de Aceitação ──────────────────────────────────
 # Retornado junto com as métricas para facilitar interpretação.
  
 @dataclass
@@ -51,10 +51,17 @@ class DiagnosticoAlpha:
     diagnostico: str              # texto curto de interpretação
  
  
+def _lacuna_ia(alpha_ia, alpha_dominio) -> float | None:
+    """Lacuna da IA = Riqueza do Domínio - Precisão da IA (de -1 a 1)."""
+    if alpha_ia is None or alpha_dominio is None:
+        return None
+    return _round(alpha_dominio - alpha_ia)
+
+
 def _diagnostico_alpha(alpha_ia, alpha_dominio) -> str:
     if alpha_ia is None or alpha_dominio is None:
         return "sem dados suficientes para diagnóstico"
-    diff = alpha_dominio - alpha_ia
+    diff = _lacuna_ia(alpha_ia, alpha_dominio)
     if diff > 0.25:
         return "problema no prompt — IA sugerindo abaixo do potencial do domínio"
     if alpha_ia < 0.30 and alpha_dominio < 0.30:
@@ -82,11 +89,12 @@ class Metricas:
     cobertura_global: float          # média ponderada sobre todas as rodadas
     cobertura_por_rodada: list[dict] # [{rodada, E_inicio, avaliados, MAX_r, cobertura_r}]
  
-    # --- Decomposição de α ---
+    # --- Decomposição da Taxa de Aceitação ---
     pares_avaliados: int
     pares_aceitos: int
     alpha_ia: float | None           # precisão da IA: IA disse SIM e humano confirmou / IA disse SIM
     alpha_dominio: float | None      # riqueza do domínio: aceitos / avaliados
+    lacuna_ia: float | None          # riqueza do domínio - precisão da IA (de -1 a 1)
     diagnostico_alpha: DiagnosticoAlpha
  
     # --- Contribuição do HITL ---
@@ -164,17 +172,19 @@ def calcular_metricas(grafo) -> Metricas:
     else:
         pares_avaliados = sum(r["avaliados"] for r in cobertura_por_rodada)
  
-    # ── Decomposição de α  ───────────────────────────────
+    # ── Decomposição da Taxa de Aceitação ────────────────
     pares_aceitos = len(grafo.L)
     pares_ia_sim = getattr(grafo, "pares_ia_sim", 0)
     pares_ia_sim_aceitos = getattr(grafo, "pares_ia_sim_aceitos", 0)
  
-    # α_IA: dos pares onde IA disse SIM, quantos o humano confirmou
+    # Precisão da IA: dos pares onde IA disse SIM, quantos o humano confirmou
     alpha_ia = _round(pares_ia_sim_aceitos / pares_ia_sim) if pares_ia_sim > 0 else None
  
-    # α_domínio: dos pares totais avaliados, quantos tinham relação real
+    # Riqueza do Domínio: dos pares totais avaliados, quantos tinham relação real
     alpha_dominio = _round(pares_aceitos / pares_avaliados) if pares_avaliados > 0 else None
  
+    lacuna_ia = _lacuna_ia(alpha_ia, alpha_dominio)
+
     diagnostico = DiagnosticoAlpha(
         alpha_ia=alpha_ia,
         alpha_dominio=alpha_dominio,
@@ -214,6 +224,7 @@ def calcular_metricas(grafo) -> Metricas:
         pares_aceitos=pares_aceitos,
         alpha_ia=alpha_ia,
         alpha_dominio=alpha_dominio,
+        lacuna_ia=lacuna_ia,
         diagnostico_alpha=diagnostico,
         pares_aceitos_modificados=pares_aceitos_modificados,
         tau_hitl=tau_hitl,
@@ -264,26 +275,28 @@ def imprimir_metricas(grafo) -> Metricas:
               f"avaliados ={r['avaliados']:>3}/{r['MAX_r']:>3}  "
               f"cobertura = {r['cobertura_r']}")
  
-    print(f"\n  ── Decomposição de α ─────────────────")
+    print(f"\n  ── Taxa de Aceitação ─────────────────")
     ai_str  = m.alpha_ia      if m.alpha_ia      is not None else "n/a"
     dom_str = m.alpha_dominio if m.alpha_dominio is not None else "n/a"
-    print(f"  α_IA (precisao da IA)     : {ai_str}  "
+    lac_str = m.lacuna_ia     if m.lacuna_ia     is not None else "n/a"
+    print(f"  Precisao da IA            : {ai_str}  "
           f"({getattr(grafo,'pares_ia_sim_aceitos',0)} confirmados / "
           f"{getattr(grafo,'pares_ia_sim',0)} sugeridos pela IA)")
-    print(f"  α_dominio (riqueza)       : {dom_str}  "
+    print(f"  Riqueza do dominio        : {dom_str}  "
           f"({m.pares_aceitos} aceitos / {m.pares_avaliados} avaliados)")
+    print(f"  Lacuna da IA              : {lac_str}  (riqueza do dominio - precisao da IA)")
     print(f"  Diagnostico               : {m.diagnostico_alpha.diagnostico}")
  
-    print(f"\n  ── Contribuição do HITL ──────────────")
+    print(f"\n  ── Humano x IA ───────────────────────")
     th_str = m.tau_hitl if m.tau_hitl is not None else "n/a"
     ti_str = m.tau_ia   if m.tau_ia   is not None else "n/a"
-    print(f"  τ_HITL (intervencao hum.) : {th_str}  "
+    print(f"  Intervencao humana        : {th_str}  "
           f"({m.pares_aceitos_modificados} modificados / {m.pares_aceitos} aceitos)")
-    print(f"  τ_IA   (autonomia IA)     : {ti_str}")
+    print(f"  Autonomia da IA           : {ti_str}")
  
-    print(f"\n  ── Delta (nova) ────────────────────────────────────")
+    print(f"\n  ── Delta ───────────────────────────────────────────")
     delta_str = m.delta if m.delta is not None else "n/a (sem nos marcados)"
-    print(f"  Delta (desequilibrio)     : {delta_str}  "
+    print(f"  Delta                     : {delta_str}  "
           f"(pos={m.positivos} neg={m.negativos} ambos={m.ambos})")
  
     pendentes_totais = sum(len(v) for v in m.pendentes_por_papel.values())

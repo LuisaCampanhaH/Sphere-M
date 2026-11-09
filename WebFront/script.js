@@ -1073,7 +1073,7 @@ let _aiLastMeio = null;
 let _aiLastTipoAof = null; 
 
 // Versão do prompt enviado à IA. Vai em cada JSON exportado: sessões feitas
-// com versões diferentes não têm α_IA comparável (o experimento mudou).
+// com versões diferentes não têm Precisão da IA comparável (o experimento mudou).
 const PROMPT_VERSAO = 2;
 // Contexto do domínio escrito pela pesquisadora na fase 1. Substitui as
 // notas fixas que existiam aqui (ex.: "natal" ≠ feriado): vale para qualquer domínio.
@@ -1899,10 +1899,11 @@ function renderMetricsPanel(m) {
     ['Densidade', m.densidade],
     ['Produtividade', formatarMetrica(m.produtividade)],
     ['Cobertura global', m.cobertura_global],
-    ['α_IA', formatarMetrica(m.alpha_ia)],
-    ['α_domínio', formatarMetrica(m.alpha_dominio)],
-    ['τ_HITL', formatarMetrica(m.tau_hitl)],
-    ['τ_IA', formatarMetrica(m.tau_ia)],
+    ['Precisão da IA', formatarMetrica(m.alpha_ia)],
+    ['Riqueza do domínio', formatarMetrica(m.alpha_dominio)],
+    ['Lacuna da IA', formatarMetrica(m.lacuna_ia)],
+    ['Intervenção humana', formatarMetrica(m.tau_hitl)],
+    ['Autonomia da IA', formatarMetrica(m.tau_ia)],
     ['Delta', formatarMetrica(m.delta)],
   ];
   el.metricsPanel.innerHTML = linhas

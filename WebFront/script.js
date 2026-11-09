@@ -156,6 +156,17 @@ function getNodeById(id) {
   return nodes.find(n => n.id === id);
 }
 
+// Atributos de um nó: lista de linhas {nome, valor}, como uma tabela.
+// Normaliza o que vier (editor, JSON importado): tira espaços das pontas
+// e descarta linhas sem nome. Usado na importação, na exportação e no OK
+// do editor, para o formato ser sempre o mesmo.
+function normalizarAtributos(lista) {
+  if (!Array.isArray(lista)) return [];
+  return lista
+    .map(a => ({ nome: String(a?.nome ?? '').trim(), valor: String(a?.valor ?? '').trim() }))
+    .filter(a => a.nome);
+}
+
 function createNode(label, group, x, y) {   
   const id = nextId++;   
   const node = {     
@@ -170,6 +181,9 @@ function createNode(label, group, x, y) {
     tagNatureza: null,
     tagCaminho: null,
     tagCaminhoManual: false,
+    // Atributos do conceito (anotação tipo linha de tabela: {nome, valor}).
+    // Só descrevem o nó: não entram em E/G, arestas, seenPairs nem métricas.
+    atributos: [],
     // Filtro visual (Alt+clique) — nunca lido por buildSessionExport(),
     // importSessionFromObject(), auditTags() ou qualquer coisa que vá pro
     // Python: some do desenho/física/clique, mas o nó continua no grafo.
@@ -953,6 +967,15 @@ function draw() {
       ctx.fillText(simbolo, nx + nw - 10, ny + 10);       
       ctx.restore();
     }
+    if (nd.atributos && nd.atributos.length) {
+      ctx.save();
+      ctx.font = '600 9px "Geist Mono", ui-monospace, monospace';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = c.stroke;
+      ctx.fillText(`≡${nd.atributos.length}`, nx + nw - 5, ny + nh - 4);
+      ctx.restore();
+    }
   });
   ctx.restore(); // fecha o save() da câmera — daqui pra baixo é tela, não mundo
   if (!nodes.length) {
@@ -1673,7 +1696,8 @@ function buildSessionExport() {
         label: n.label,         
         group: n.group,         
         tagNatureza: n.tagNatureza || null,         
-        tagCaminho: n.tagCaminho || null,       
+        tagCaminho: n.tagCaminho || null,
+        atributos: normalizarAtributos(n.atributos),       
       })),       
       edges: edges.map(e => ({ from: e.from, to: e.to, tipoAof: e.tipo || null })),  
       paresAvaliados: [...seenPairs],
@@ -1801,7 +1825,8 @@ function importSessionFromObject(raw) {
   data.nodes.forEach(n => {     
     const group = ['teto', 'piso', 'relacionado', 'meio'].includes(n.group) ? n.group : 'relacionado';     
     const node = createNode(String(n.label ?? ''), group);     
-    node.tagNatureza = n.tagNatureza || null;     
+    node.tagNatureza = n.tagNatureza || null;
+    node.atributos = normalizarAtributos(n.atributos);     
     const tagCaminho = n.tagCaminho || null;     
     node.tagCaminho = tagCaminho;     
     // Só tratamos positivo/negativo como "semente manual" — "ambos" é sempre
@@ -2187,6 +2212,24 @@ function criarPainelFlutuante(left, top, width) {
   return panel;
 }
 
+// Depois que um painel flutuante entra no DOM, garante que ele caiba na
+// janela. Se passar da borda de baixo, abre ACIMA do ponto `topoAcima`
+// (ex: o topo do nó editado); se não couber nem assim, encosta na borda.
+// Chamar de novo sempre que o painel crescer (ex: nova linha de atributo).
+function manterPainelNaTela(panel, topoAcima) {
+  const margem = 8;
+  const r = panel.getBoundingClientRect();
+  let top = r.top, left = r.left;
+  if (r.bottom > window.innerHeight - margem) {
+    top = (topoAcima !== undefined && topoAcima - r.height >= margem)
+      ? topoAcima - r.height
+      : window.innerHeight - margem - r.height;
+  }
+  if (r.right > window.innerWidth - margem) left = window.innerWidth - margem - r.width;
+  panel.style.top  = Math.max(margem, top) + 'px';
+  panel.style.left = Math.max(margem, left) + 'px';
+}
+
 function criarBotoesOkCancelar(onOk, onCancel) {
   const btnRow = document.createElement('div');
   btnRow.style.display = 'flex';
@@ -2357,7 +2400,7 @@ function startNodeEdit(node) {
   nodeTagPanel = criarPainelFlutuante(
     rect.left + topLeft.x * scaleX,
     rect.top  + topLeft.y * scaleY + 30,
-    Math.max(node.w * camScale * scaleX, 170)
+    Math.max(node.w * camScale * scaleX, 260)
   );
   const selectsRow = document.createElement('div');
   selectsRow.style.display = 'flex';   
@@ -2389,10 +2432,61 @@ function startNodeEdit(node) {
   });   
   selectsRow.appendChild(selNatureza);
   selectsRow.appendChild(selCaminho);
+  // ── Atributos do nó (tabela atributo → valor) ──
+  // As linhas existem só no DOM até o OK: Cancelar/Esc descarta tudo.
+  const atributosBox = document.createElement('div');
+  atributosBox.style.cssText = 'display:flex; flex-direction:column; gap:4px; border-top:1px solid var(--border, #e2ded4); padding-top:6px;';
+  const atributosTitulo = document.createElement('div');
+  atributosTitulo.textContent = 'Atributos';
+  atributosTitulo.style.cssText = 'font: 600 10px "Geist Mono", ui-monospace, monospace; letter-spacing:.06em; text-transform:uppercase; color: var(--text-muted, #7a756b);';
+  const atributosLinhas = document.createElement('div');
+  atributosLinhas.style.cssText = 'display:flex; flex-direction:column; gap:4px; max-height:160px; overflow-y:auto;';
+  const inputAtribStyle = `
+    flex: 1; min-width: 0; font: 500 11px "Geist Mono", ui-monospace, monospace;
+    padding: 4px 6px; border-radius: 6px;
+    border: 1px solid var(--border2, #ccc7ba);
+    background: var(--surface2, #f3f1ec); color: var(--text, #1c1a17); outline: none;
+    height: 26px; box-sizing: border-box;
+  `;
+  const adicionarLinhaAtributo = (nome = '', valor = '') => {
+    const linha = document.createElement('div');
+    linha.style.cssText = 'display:flex; gap:4px; align-items:center;';
+    const inNome = document.createElement('input');
+    inNome.type = 'text'; inNome.placeholder = 'atributo'; inNome.value = nome;
+    inNome.style.cssText = inputAtribStyle;
+    const inValor = document.createElement('input');
+    inValor.type = 'text'; inValor.placeholder = 'valor'; inValor.value = valor;
+    inValor.style.cssText = inputAtribStyle;
+    const btnRemover = document.createElement('button');
+    btnRemover.type = 'button'; btnRemover.textContent = '✕';
+    btnRemover.title = 'Remover atributo';
+    btnRemover.setAttribute('aria-label', 'Remover atributo');
+    btnRemover.style.cssText = 'border:none; background:none; cursor:pointer; color: var(--text-muted, #7a756b); font-size:12px; padding:0 4px;';
+    btnRemover.addEventListener('click', () => linha.remove());
+    [inNome, inValor].forEach(inp => inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); commitNodeEdit(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancelNodeEdit(); }
+    }));
+    linha.append(inNome, inValor, btnRemover);
+    atributosLinhas.appendChild(linha);
+    if (nodeTagPanel && nodeTagPanel.isConnected) manterPainelNaTela(nodeTagPanel, nodeTagPanel._topoAcima);
+    return inNome;
+  };
+  (node.atributos || []).forEach(a => adicionarLinhaAtributo(a.nome, a.valor));
+  const btnAddAtributo = document.createElement('button');
+  btnAddAtributo.type = 'button';
+  btnAddAtributo.textContent = '+ atributo';
+  btnAddAtributo.style.cssText = 'align-self:flex-start; border:1px dashed var(--border2, #ccc7ba); background:none; border-radius:6px; padding:3px 8px; cursor:pointer; font: 500 11px "Geist Mono", ui-monospace, monospace; color: var(--text, #1c1a17);';
+  btnAddAtributo.addEventListener('click', () => adicionarLinhaAtributo().focus());
+  atributosBox.append(atributosTitulo, atributosLinhas, btnAddAtributo);
   const btnRow = criarBotoesOkCancelar(() => commitNodeEdit(), () => cancelNodeEdit());
   nodeTagPanel.appendChild(selectsRow);
+  nodeTagPanel.appendChild(atributosBox);
   nodeTagPanel.appendChild(btnRow);
+  nodeTagPanel._atributosLinhas = atributosLinhas;
   document.body.appendChild(nodeTagPanel);
+  nodeTagPanel._topoAcima = rect.top + topLeft.y * scaleY - 4;
+  manterPainelNaTela(nodeTagPanel, nodeTagPanel._topoAcima);
   nodeTagPanel._selNatureza = selNatureza;
   nodeTagPanel._selCaminho = selCaminho;
   nodeEditInput.addEventListener('keydown', e => {
@@ -2443,7 +2537,13 @@ function commitNodeEdit() {
     const novoCaminho  = nodeTagPanel._selCaminho.value || null;     
     editingNode.tagNatureza = novaNatureza;     
     editingNode.tagCaminho  = novoCaminho;     
-    editingNode.tagCaminhoManual = !!novoCaminho;     
+    editingNode.tagCaminhoManual = !!novoCaminho;
+    editingNode.atributos = normalizarAtributos(
+      [...nodeTagPanel._atributosLinhas.children].map(linha => {
+        const [inNome, inValor] = linha.querySelectorAll('input');
+        return { nome: inNome.value, valor: inValor.value };
+      })
+    );     
     reavaliarTiposDeArestas();     
     nodeTagPanel._cleanup?.();     
     nodeTagPanel.remove();     
@@ -2480,7 +2580,7 @@ canvas.addEventListener('dblclick', e => {
 
 document.addEventListener('keydown', e => {   
   const tag = document.activeElement.tagName;   
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selected && tag !== 'INPUT') {     
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(tag) && !editingNode && !editingEdge) {     
     edges = edges.filter(ed => ed.from !== selected.id && ed.to !== selected.id);     
     nodes = nodes.filter(n => n.id !== selected.id);     
     selected = null;     

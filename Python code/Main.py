@@ -18,6 +18,9 @@ class No_Grafo:
         self.papel: str   = "gerado"
         self.tag_natureza: str | None = None
         self.tag_caminho: str | None = None
+        # Atributos do conceito vindos do WebFront: lista de {"nome", "valor"}.
+        # Só anotação: nenhuma métrica lê este campo.
+        self.atributos: list[dict[str, str]] = []
 
 
 class Grafo:

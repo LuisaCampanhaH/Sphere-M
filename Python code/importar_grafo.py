@@ -32,6 +32,21 @@ def Carregar_De_Json(caminho: str) -> Grafo:
     return Carregar_De_Payload(bruto)
 
 
+def _normalizar_atributos(lista) -> list[dict[str, str]]:
+    """Mesma regra do normalizarAtributos() do script.js: tira espaços e descarta linhas sem nome."""
+    if not isinstance(lista, list):
+        return []
+    saida = []
+    for a in lista:
+        if not isinstance(a, dict):
+            continue
+        nome = str(a.get("nome") or "").strip()
+        valor = str(a.get("valor") or "").strip()
+        if nome:
+            saida.append({"nome": nome, "valor": valor})
+    return saida
+
+
 def Carregar_De_Payload(bruto: dict) -> Grafo:
     """
     Mesma reconstrução de Carregar_De_Json, mas a partir de um dict já
@@ -47,6 +62,7 @@ def Carregar_De_Payload(bruto: dict) -> Grafo:
         no.papel        = MAPA_PAPEL.get(n.get("group"), "gerado")
         no.tag_natureza = n.get("tagNatureza")
         no.tag_caminho  = n.get("tagCaminho")
+        no.atributos    = _normalizar_atributos(n.get("atributos"))
         id_para_no[n["id"]] = no
         
     dominio = payload.get("domain", {})

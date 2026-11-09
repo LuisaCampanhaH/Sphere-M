@@ -36,6 +36,7 @@ def exportar_modelo(grafo, caminho: str) -> None:
             "achou_piso": no.achou_piso,
             "tag_natureza": getattr(no, "tag_natureza", None),
             "tag_caminho": getattr(no, "tag_caminho", None),
+            "atributos": getattr(no, "atributos", []),
             "vizinhos": [v.valor for v in no.vizinhos],
             "vizinhos_inv": [v.valor for v in no.vizinhos_inv],
         })
@@ -94,6 +95,7 @@ def importar_modelo(caminho: str):
         no.achou_piso = n.get("achou_piso", False)
         no.tag_natureza = n.get("tag_natureza")
         no.tag_caminho = n.get("tag_caminho")
+        no.atributos = n.get("atributos", [])
 
     for n in payload["nodes"]:
         no = grafo.Buscar_No(n["valor"])

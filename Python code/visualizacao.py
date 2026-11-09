@@ -55,6 +55,8 @@ def desenhar_grafo(grafo):
             titulo += f"\nnatureza: {tag_natureza}"
         if tag_caminho:
             titulo += f"\ncaminho: {tag_caminho}"
+        for atributo in getattr(no, "atributos", []):
+            titulo += f"\n{atributo['nome']}: {atributo['valor']}"
             
         net.add_node(
             no.valor,
